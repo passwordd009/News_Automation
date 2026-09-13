@@ -47,6 +47,28 @@ def _env_float(name: str, default: float) -> float:
         return default
 
 
+def _absolute_sqlite_url(url: str) -> str:
+    """Anchor a relative SQLite path to the project root.
+
+    ``sqlite:///hestia_news.db`` otherwise resolves against the current working
+    directory, so collecting from one directory and generating the document
+    from another would quietly use two different databases.
+    """
+    prefix = "sqlite:///"
+    if not url.startswith(prefix):
+        return url
+
+    raw_path = url[len(prefix) :]
+    if not raw_path or raw_path.startswith(":memory:"):
+        return url
+
+    path = Path(raw_path).expanduser()
+    if path.is_absolute():
+        return url
+
+    return f"{prefix}{(PROJECT_ROOT / path).resolve()}"
+
+
 def _env_int(name: str, default: int) -> int:
     value = os.getenv(name)
     if value is None or not value.strip():
@@ -178,7 +200,7 @@ def get_settings() -> Settings:
     """Load settings once per process."""
     feeds_file = os.getenv("RSS_FEEDS_FILE", "").strip()
     return Settings(
-        database_url=_env_str("DATABASE_URL", "sqlite:///hestia_news.db"),
+        database_url=_absolute_sqlite_url(_env_str("DATABASE_URL", "sqlite:///hestia_news.db")),
         enable_rss=_env_bool("ENABLE_RSS", True),
         enable_gmail=_env_bool("ENABLE_GMAIL", False),
         enable_news_api=_env_bool("ENABLE_NEWS_API", False),

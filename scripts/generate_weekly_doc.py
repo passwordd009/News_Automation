@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-"""Generate the Weekly Wrap-Up document.
+"""Collect articles and generate the Weekly Wrap-Up document.
 
-By default this writes a local file you can read immediately — no Google
-account required:
+One command does the whole job: it collects fresh articles from every enabled
+source, stores them, then builds the document from the last seven days.
 
     python scripts/generate_weekly_doc.py
 
-Add --google to create a real Google Doc instead (needs credentials.json):
+By default it writes a local file you can read immediately — no Google account
+required. Add --google to create a real Google Doc (needs credentials.json):
 
     python scripts/generate_weekly_doc.py --google
 
 Other options:
 
+    --no-collect       build from what is already stored, fetch nothing
     --days 14          widen the window from the default seven days
     --max 8            cap how many articles are included
     --approved-only    only articles the LLM approved (Phase 3+)
@@ -30,16 +32,23 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.config import configure_logging, get_settings  # noqa: E402
 from app.database.database import init_db, session_scope  # noqa: E402
 from app.database.repository import (  # noqa: E402
+    count_by_status,
     default_week_window,
     get_articles_in_window,
     mark_selected,
 )
 from app.google.document_builder import PLACEHOLDER_WHY_POST, render_text  # noqa: E402
+from app.services.daily_pipeline import run_collection  # noqa: E402
 from app.services.weekly_pipeline import build_weekly_document  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Generate the Weekly Wrap-Up document.")
+    parser = argparse.ArgumentParser(description="Collect articles and generate the Weekly Wrap-Up document.")
+    parser.add_argument(
+        "--no-collect",
+        action="store_true",
+        help="Skip collection and build the document from what is already stored.",
+    )
     parser.add_argument("--days", type=int, default=7, help="Size of the window in days (default 7).")
     parser.add_argument("--max", type=int, default=None, help="Maximum articles to include.")
     parser.add_argument(
@@ -66,22 +75,32 @@ def main() -> int:
     if args.max is not None:
         settings = replace_max(settings, args.max)
 
+    init_db()
+
+    if args.no_collect:
+        print("Skipping collection (--no-collect); using articles already stored.\n")
+    else:
+        print("Collecting articles…")
+        stats = run_collection(settings, save=not args.dry_run)
+        print(f"{stats.format_summary()}\n")
+        if args.dry_run and stats.fetched:
+            print("Dry run — the articles just fetched were not stored.\n")
+
+    # Computed *after* collection: articles discovered during this run must fall
+    # inside the window, and an end timestamp taken earlier would exclude them.
     start, end = default_week_window(days=args.days)
 
-    init_db()
     with session_scope() as session:
+        # No upper bound: anything discovered since `start`, including what the
+        # collection above just added. `end` is used for the document's dates.
         articles = get_articles_in_window(
             session,
             start=start,
-            end=end,
             approved_only=args.approved_only,
         )
 
         if not articles:
-            print(
-                f"No articles found between {start:%Y-%m-%d} and {end:%Y-%m-%d}.\n"
-                "Collect some first:  python scripts/collect_articles.py"
-            )
+            print(explain_empty_result(start, end, args))
             return 0
 
         document, chosen = build_weekly_document(articles, start=start, end=end, settings=settings)
@@ -119,6 +138,46 @@ def main() -> int:
             "Phase 3 (the LLM reviewer) fills these in automatically."
         )
     return 0
+
+
+def explain_empty_result(start: datetime, end: datetime, args: argparse.Namespace) -> str:
+    """Say *why* the window is empty instead of just reporting that it is."""
+    with session_scope() as session:
+        counts = count_by_status(session)
+
+    total = sum(counts.values())
+    lines = [f"No articles to include for {start:%Y-%m-%d} to {end:%Y-%m-%d}."]
+
+    if total == 0:
+        lines += [
+            "",
+            "The database is empty. Most likely the feeds could not be reached —",
+            "re-run with --log-level DEBUG to see what each feed returned, and check",
+            "that config/rss_feeds.json has feeds enabled.",
+        ]
+        return "\n".join(lines)
+
+    used = counts.get("selected", 0) + counts.get("posted", 0)
+    if args.approved_only:
+        lines += [
+            "",
+            f"{total} article(s) are stored, but --approved-only keeps just the ones the",
+            "LLM approved, and the reviewer (Phase 3) does not exist yet — so nothing",
+            "qualifies. Re-run without --approved-only.",
+        ]
+    elif used >= total:
+        lines += [
+            "",
+            f"All {total} stored article(s) already appeared in a previous Wrap-Up.",
+            "Collect newer articles, or widen the window with --days 14.",
+        ]
+    else:
+        lines += [
+            "",
+            f"{total} article(s) are stored but none were discovered in the last",
+            f"{args.days} day(s). Widen the window with --days 30.",
+        ]
+    return "\n".join(lines)
 
 
 def write_local(document, rendered: str, out: Path | None, settings) -> Path:
