@@ -35,7 +35,7 @@ Requires Python 3.12+ (the code also runs on 3.11).
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r worker/requirements.txt
 cp .env.example .env               # optional; defaults work out of the box
 ```
 
@@ -43,35 +43,35 @@ cp .env.example .env               # optional; defaults work out of the box
 the document:
 
 ```bash
-python scripts/generate_weekly_doc.py
+python worker/scripts/generate_weekly_doc.py
 ```
 
 That writes `output/weekly-wrap-up-YYYY-MM-DD.txt` and prints it. To create a
 real Google Doc instead, see [Google Docs output](#google-docs-output) below:
 
 ```bash
-python scripts/generate_weekly_doc.py --google
+python worker/scripts/generate_weekly_doc.py --google
 ```
 
-Use `scripts/collect_articles.py` when you want to collect *without* building a
+Use `worker/scripts/collect_articles.py` when you want to collect *without* building a
 document — for example from a daily cron job that feeds a weekly one.
 
 Useful flags:
 
 ```bash
 # Collection
-python scripts/collect_articles.py --limit 20                         # cap output
-python scripts/collect_articles.py --feed https://gothamist.com/feed  # one feed only
-python scripts/collect_articles.py --json                             # machine-readable
-python scripts/collect_articles.py --no-save                          # preview, store nothing
+python worker/scripts/collect_articles.py --limit 20                         # cap output
+python worker/scripts/collect_articles.py --feed https://gothamist.com/feed  # one feed only
+python worker/scripts/collect_articles.py --json                             # machine-readable
+python worker/scripts/collect_articles.py --no-save                          # preview, store nothing
 
 # Weekly document (collects first unless told otherwise)
-python scripts/generate_weekly_doc.py --no-collect     # use what is already stored
-python scripts/generate_weekly_doc.py --dry-run        # print it, change nothing
-python scripts/generate_weekly_doc.py --days 14        # widen the window
-python scripts/generate_weekly_doc.py --max 8          # cap the article count
-python scripts/generate_weekly_doc.py --approved-only  # LLM-approved only (Phase 3+)
-python scripts/generate_weekly_doc.py --out draft.txt  # choose the output path
+python worker/scripts/generate_weekly_doc.py --no-collect     # use what is already stored
+python worker/scripts/generate_weekly_doc.py --dry-run        # print it, change nothing
+python worker/scripts/generate_weekly_doc.py --days 14        # widen the window
+python worker/scripts/generate_weekly_doc.py --max 8          # cap the article count
+python worker/scripts/generate_weekly_doc.py --approved-only  # LLM-approved only (Phase 3+)
+python worker/scripts/generate_weekly_doc.py --out draft.txt  # choose the output path
 ```
 
 `--dry-run` is the safe way to look: a normal run marks the articles it used as
@@ -107,7 +107,7 @@ Only needed for `--google`; the local file needs no setup.
    project and enable both the **Google Docs API** and the **Google Drive API**.
 2. Create an OAuth client ID of type **Desktop app**, download the JSON, and
    save it as `credentials.json` in the project root.
-3. Run `python scripts/generate_weekly_doc.py --google`. A browser opens once
+3. Run `python worker/scripts/generate_weekly_doc.py --google`. A browser opens once
    for consent; the resulting `token.json` is reused afterwards.
 
 Both files are gitignored. Set `GOOGLE_DRIVE_FOLDER_ID` to drop the doc into a
@@ -122,31 +122,36 @@ pytest tests/ -q
 
 ## Layout
 
+The repository is a monorepo. `supabase/migrations/` is the schema contract
+shared by both sides.
+
 ```
-app/
-├── collectors/          # one module per source, all behind NewsCollector
-│   ├── base.py          # the NewsCollector interface + safe_fetch guard rail
-│   └── rss_collector.py # Phase 1 source
-├── processing/
-│   ├── url_normalizer.py
-│   └── deduplicator.py       # title fingerprints + similarity (Level 1 & 2)
-├── database/
-│   ├── models.py             # SQLAlchemy Article + ArticleStatus
-│   ├── database.py           # engine, session_scope(), init_db()
-│   └── repository.py         # all queries live here
-├── google/
-│   ├── document_builder.py   # the Wrap-Up format — no Google dependency
-│   └── docs_writer.py        # uploads that format to Google Docs
-├── services/
-│   ├── daily_pipeline.py     # fetch from every enabled collector + store
-│   └── weekly_pipeline.py    # article selection + document assembly
-├── llm/                      # Phase 3
-├── schemas.py                # ArticleCandidate + ArticleReview (Pydantic)
-└── config.py                 # environment-driven settings
-config/rss_feeds.json         # the feed list — configuration, not code
-scripts/collect_articles.py
-scripts/generate_weekly_doc.py
-tests/
+worker/                       Python ingestion + AI screening
+├── app/
+│   ├── collectors/           # one module per source, all behind NewsCollector
+│   │   ├── base.py           # the NewsCollector interface + safe_fetch guard rail
+│   │   └── rss_collector.py
+│   ├── processing/
+│   │   ├── url_normalizer.py
+│   │   └── deduplicator.py   # title fingerprints + similarity (Level 1 & 2)
+│   ├── database/
+│   │   ├── models.py         # SQLAlchemy Article + ArticleStatus
+│   │   ├── database.py       # engine, session_scope(), init_db()
+│   │   └── repository.py     # all queries live here
+│   ├── google/               # legacy — deprecated by the CMS migration
+│   ├── services/
+│   │   ├── daily_pipeline.py # fetch from every enabled collector + store
+│   │   └── weekly_pipeline.py
+│   ├── llm/                  # the reviewer lands here
+│   ├── schemas.py            # ArticleCandidate + ArticleReview (Pydantic)
+│   └── config.py             # environment-driven settings
+├── config/rss_feeds.json     # the feed list — configuration, not code
+├── scripts/
+└── tests/
+
+web/                          Next.js editorial dashboard (not built yet)
+supabase/migrations/          the schema — single source of truth
+docs/                         CMS spec + migration plan
 ```
 
 ## Configuration
@@ -158,7 +163,7 @@ values you are most likely to touch:
 |----------|---------|---------|
 | `DATABASE_URL` | `sqlite:///hestia_news.db` | Storage. A relative SQLite path is resolved against the project root, so the commands find the same database whatever directory you run them from. Swap for Postgres later without code changes. |
 | `ENABLE_RSS` / `ENABLE_GMAIL` / `ENABLE_NEWS_API` | `true` / `false` / `false` | Turn collectors on and off. |
-| `RSS_FEEDS_FILE` | `config/rss_feeds.json` | Where the feed list lives. |
+| `RSS_FEEDS_FILE` | `config/rss_feeds.json` (relative to `worker/`) | Where the feed list lives. |
 | `RSS_FEEDS` | — | Comma-separated URLs; overrides the file entirely. |
 | `LOOKBACK_DAYS` | `2` | Ignore entries older than this. |
 | `MIN_ARTICLE_SCORE` | `7` | Approval threshold (Phase 4). |
@@ -166,7 +171,7 @@ values you are most likely to touch:
 
 ### Adding or muting a feed
 
-Edit `config/rss_feeds.json` — no code changes:
+Edit `worker/config/rss_feeds.json` — no code changes:
 
 ```json
 { "name": "Chalkbeat New York", "url": "https://www.chalkbeat.org/...", "enabled": true }
