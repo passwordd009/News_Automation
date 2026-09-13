@@ -93,9 +93,12 @@ class Settings:
     min_nyc_relevance: float = 6.0
     min_credibility: float = 6.0
 
-    # Weekly selection (Phase 6)
+    # Weekly doc (Phase 6)
     weekly_min_articles: int = 5
     weekly_max_articles: int = 10
+    google_client_secret_file: str = "credentials.json"
+    google_drive_folder_id: str = ""
+    weekly_output_dir: Path = PROJECT_ROOT / "output"
 
     # Logging
     log_level: str = "INFO"
@@ -194,6 +197,9 @@ def get_settings() -> Settings:
         min_credibility=_env_float("MIN_CREDIBILITY", 6.0),
         weekly_min_articles=_env_int("WEEKLY_MIN_ARTICLES", 5),
         weekly_max_articles=_env_int("WEEKLY_MAX_ARTICLES", 10),
+        google_client_secret_file=_env_str("GOOGLE_CLIENT_SECRET_FILE", "credentials.json"),
+        google_drive_folder_id=_env_str("GOOGLE_DRIVE_FOLDER_ID", ""),
+        weekly_output_dir=Path(_env_str("WEEKLY_OUTPUT_DIR", str(PROJECT_ROOT / "output"))),
         log_level=_env_str("LOG_LEVEL", "INFO").upper(),
     )
 

@@ -9,20 +9,24 @@ article against Hestia's editorial goals, and generates a Google Doc of the best
 stories each week. **Nothing is ever published automatically** — the weekly doc
 is a draft for the Hestia team to review and edit.
 
-## Status — Phase 1 complete
+## Status
 
 | Phase | Scope | Status |
 |-------|---------------------------------------------|--------|
 | 1 | Article models, SQLite database, RSS collector | ✅ Done |
-| 2 | Deduplication | ⬜ Next |
-| 3 | Ollama LLM reviewer | ⬜ |
+| 2 | Deduplication (URL + title; embeddings deferred) | ✅ Done |
+| 3 | Ollama LLM reviewer | ⬜ **Next** |
 | 4 | Scoring and approval | ⬜ |
 | 5 | Terminal report of approved stories | ⬜ |
-| 6 | Google Docs generation | ⬜ |
+| 6 | Weekly doc generation (local file + Google Docs) | ✅ Done |
 | 7 | Gmail newsletter ingestion | ⬜ |
 | 8 | Optional news API collector | ⬜ |
 | 9 | Scheduling (cron / GitHub Actions) | ⬜ |
-| 10 | Tests, monitoring, documentation | ⬜ |
+| 10 | Tests, monitoring, documentation | 🟨 40 tests passing |
+
+**Phase 6 landed before Phase 3**, so the document works end to end but each
+entry's `Why post` is an explicit placeholder rather than written prose, and
+`Topic` reads `Uncategorized`. The LLM reviewer fills both in.
 
 ## Quick start
 
@@ -37,28 +41,75 @@ cp .env.example .env               # optional; defaults work out of the box
 python scripts/collect_articles.py
 ```
 
+Collected articles are stored in `hestia_news.db`. Then build the document:
+
+```bash
+python scripts/generate_weekly_doc.py
+```
+
+That writes `output/weekly-wrap-up-YYYY-MM-DD.txt` and prints it. To create a
+real Google Doc instead, see [Google Docs output](#google-docs-output) below:
+
+```bash
+python scripts/generate_weekly_doc.py --google
+```
+
 Useful flags:
 
 ```bash
-python scripts/collect_articles.py --limit 20                       # cap output
+# Collection
+python scripts/collect_articles.py --limit 20                         # cap output
 python scripts/collect_articles.py --feed https://gothamist.com/feed  # one feed only
-python scripts/collect_articles.py --json                           # machine-readable
-python scripts/collect_articles.py --log-level DEBUG                # verbose
+python scripts/collect_articles.py --json                             # machine-readable
+python scripts/collect_articles.py --no-save                          # preview, store nothing
+
+# Weekly document
+python scripts/generate_weekly_doc.py --dry-run        # print it, change nothing
+python scripts/generate_weekly_doc.py --days 14        # widen the window
+python scripts/generate_weekly_doc.py --max 8          # cap the article count
+python scripts/generate_weekly_doc.py --approved-only  # LLM-approved only (Phase 3+)
+python scripts/generate_weekly_doc.py --out draft.txt  # choose the output path
 ```
 
-Sample output:
+`--dry-run` is the safe way to look: a normal run marks the articles it used as
+`selected` so they cannot appear in a later Wrap-Up.
+
+Sample document:
 
 ```
-  1. City launches $5M grant program for small businesses
-     Gothamist  |  2026-09-12 23:38 UTC
-     https://gothamist.com/grants
-     The city announced grants for neighborhood businesses affected by construction.
+WEEKLY WRAP-UP
 
-------------------------------------------------------------------------
-Collected: 2
-    2  Gothamist
-------------------------------------------------------------------------
+DATE: September 6, 2026 - September 13, 2026
+
+
+Topic: Small Business
+
+URL:
+https://example.com/grants
+
+Description:
+The city announced $5 million in grants for businesses affected by construction.
+
+Why post:
+[Needs review — the LLM reviewer (Phase 3) has not written this yet.]
+
+--------------------------------------------
 ```
+
+## Google Docs output
+
+Only needed for `--google`; the local file needs no setup.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a
+   project and enable both the **Google Docs API** and the **Google Drive API**.
+2. Create an OAuth client ID of type **Desktop app**, download the JSON, and
+   save it as `credentials.json` in the project root.
+3. Run `python scripts/generate_weekly_doc.py --google`. A browser opens once
+   for consent; the resulting `token.json` is reused afterwards.
+
+Both files are gitignored. Set `GOOGLE_DRIVE_FOLDER_ID` to drop the doc into a
+specific Drive folder. The doc is fully editable by the Hestia team — and
+nothing is ever posted to Instagram automatically.
 
 Run the tests (no network needed — feeds are served from fixtures):
 
@@ -74,17 +125,23 @@ app/
 │   ├── base.py          # the NewsCollector interface + safe_fetch guard rail
 │   └── rss_collector.py # Phase 1 source
 ├── processing/
-│   └── url_normalizer.py
+│   ├── url_normalizer.py
+│   └── deduplicator.py       # title fingerprints + similarity (Level 1 & 2)
 ├── database/
-│   ├── models.py        # SQLAlchemy Article + ArticleStatus
-│   └── database.py      # engine, session_scope(), init_db()
-├── llm/                 # Phase 3
-├── google/              # Phase 6
-├── services/            # daily & weekly pipelines (Phase 4-6)
-├── schemas.py           # ArticleCandidate + ArticleReview (Pydantic)
-└── config.py            # environment-driven settings
-config/rss_feeds.json    # the feed list — configuration, not code
+│   ├── models.py             # SQLAlchemy Article + ArticleStatus
+│   ├── database.py           # engine, session_scope(), init_db()
+│   └── repository.py         # all queries live here
+├── google/
+│   ├── document_builder.py   # the Wrap-Up format — no Google dependency
+│   └── docs_writer.py        # uploads that format to Google Docs
+├── services/
+│   └── weekly_pipeline.py    # article selection + document assembly
+├── llm/                      # Phase 3
+├── schemas.py                # ArticleCandidate + ArticleReview (Pydantic)
+└── config.py                 # environment-driven settings
+config/rss_feeds.json         # the feed list — configuration, not code
 scripts/collect_articles.py
+scripts/generate_weekly_doc.py
 tests/
 ```
 
@@ -143,8 +200,23 @@ rather than being stored blank.
 `candidate → reviewed → approved/rejected → selected → posted`, and the URL
 column is unique, so a story cannot appear in two different Weekly Wrap-Ups.
 
-## Next: Phase 2
+**The document format has no Google dependency.** `document_builder.py` owns the
+layout and renders to text; `docs_writer.py` turns the same structure into
+Google Docs API calls. The format is therefore fully testable offline, and the
+destination is swappable.
 
-Deduplication — exact normalized-URL matching (Level 1) and near-identical
-title matching (Level 2), checked against stored history. Embedding similarity
-(Level 3) is deliberately deferred.
+**Missing data is flagged, never invented.** Before the LLM reviewer exists,
+`Description` falls back to the article's own summary and `Why post` is an
+explicit `[Needs review]` placeholder. The generator never writes a
+justification it cannot support.
+
+## Next: Phase 3
+
+The Ollama reviewer, behind an `LLMClient` interface so Claude, OpenAI or
+Gemini can replace it later. That fills in `Topic`, `Description` and
+`Why post`, enables `--approved-only`, and activates the scoring thresholds
+already defined in `schemas.py`.
+
+Known gap for Phase 3: near-duplicate titles are collapsed *within* one
+document, but a story very similar to one used in a **previous** week is not
+yet caught — only exact article reuse is blocked, via the `selected` status.

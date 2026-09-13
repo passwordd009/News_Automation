@@ -21,6 +21,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.collectors.rss_collector import RSSCollector  # noqa: E402
 from app.config import FeedConfig, configure_logging, get_settings  # noqa: E402
+from app.database.database import init_db, session_scope  # noqa: E402
+from app.database.repository import save_candidates  # noqa: E402
 from app.processing.url_normalizer import domain_of  # noqa: E402
 from app.schemas import ArticleCandidate  # noqa: E402
 
@@ -36,6 +38,11 @@ def parse_args() -> argparse.Namespace:
         help="Collect from this feed URL only. Repeatable; overrides the config file.",
     )
     parser.add_argument("--json", action="store_true", help="Print JSON instead of a readable list.")
+    parser.add_argument(
+        "--no-save",
+        action="store_true",
+        help="Preview only — do not store anything in the database.",
+    )
     parser.add_argument("--log-level", default=None, help="DEBUG, INFO, WARNING, ERROR.")
     return parser.parse_args()
 
@@ -93,6 +100,20 @@ def main() -> int:
 
     print_human(articles)
     print_summary(articles)
+
+    if args.no_save:
+        print("\nPreview only — nothing was saved (--no-save).")
+        return 0
+
+    init_db()
+    with session_scope() as session:
+        result = save_candidates(session, articles)
+
+    print(f"\nSaved: {result.saved}   Duplicates: {result.duplicates}", end="")
+    if result.failed:
+        print(f"   Failed: {result.failed}", end="")
+    print(f"\nStored in {settings.database_url}")
+    print("Build the Weekly Wrap-Up with: python scripts/generate_weekly_doc.py")
     return 0
 
 
