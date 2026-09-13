@@ -1,0 +1,18 @@
+{
+  "_comment": "Trusted NYC feeds. Edit freely - this file is configuration, not code. Set enabled:false to mute a feed without deleting it.",
+  "feeds": [
+    { "name": "Gothamist", "url": "https://gothamist.com/feed", "enabled": true },
+    { "name": "amNewYork", "url": "https://www.amny.com/feed/", "enabled": true },
+    { "name": "Bronx Times", "url": "https://www.bxtimes.com/feed/", "enabled": true },
+    { "name": "Brooklyn Paper", "url": "https://www.brooklynpaper.com/feed/", "enabled": true },
+    { "name": "QNS (Queens)", "url": "https://qns.com/feed/", "enabled": true },
+    { "name": "SILive (Staten Island)", "url": "https://www.silive.com/arc/outboundfeeds/rss/?outputType=xml", "enabled": true },
+    { "name": "Chalkbeat New York (Education)", "url": "https://www.chalkbeat.org/arc/outboundfeeds/rss/category/new-york/?outputType=xml", "enabled": true },
+    { "name": "City Limits (Housing & Policy)", "url": "https://citylimits.org/feed/", "enabled": true },
+    { "name": "The City", "url": "https://www.thecity.nyc/feeds/rss.xml", "enabled": true },
+    { "name": "NYC Mayor's Office Press Releases", "url": "https://www.nyc.gov/site/mayor/news/rss.page", "enabled": true },
+    { "name": "MTA Press Releases", "url": "https://new.mta.info/rss/press-releases", "enabled": true },
+    { "name": "Brooklyn Eagle", "url": "https://brooklyneagle.com/feed/", "enabled": false },
+    { "name": "Untapped New York", "url": "https://untappedcities.com/feed/", "enabled": false }
+  ]
+}
