@@ -8,7 +8,7 @@ from typing import Sequence
 
 from app.config import Settings, get_settings
 from app.database.models import Article
-from app.google.document_builder import WeeklyDocument, build_document
+from legacy.google.document_builder import WeeklyDocument, build_document
 from app.processing.deduplicator import titles_are_similar
 
 logger = logging.getLogger(__name__)

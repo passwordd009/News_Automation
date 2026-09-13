@@ -93,7 +93,9 @@ class FeedConfig:
 class Settings:
     """Runtime settings for the whole application."""
 
-    # Storage
+    # Storage — Supabase is the source of truth; SQLite is legacy only.
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
     database_url: str = "sqlite:///hestia_news.db"
 
     # Collectors
@@ -204,6 +206,8 @@ def get_settings() -> Settings:
     """Load settings once per process."""
     feeds_file = os.getenv("RSS_FEEDS_FILE", "").strip()
     return Settings(
+        supabase_url=_env_str("SUPABASE_URL", ""),
+        supabase_service_role_key=_env_str("SUPABASE_SERVICE_ROLE_KEY", ""),
         database_url=_absolute_sqlite_url(_env_str("DATABASE_URL", "sqlite:///hestia_news.db")),
         enable_rss=_env_bool("ENABLE_RSS", True),
         enable_gmail=_env_bool("ENABLE_GMAIL", False),

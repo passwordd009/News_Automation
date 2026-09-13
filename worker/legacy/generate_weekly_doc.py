@@ -37,9 +37,9 @@ from app.database.repository import (  # noqa: E402
     get_articles_in_window,
     mark_selected,
 )
-from app.google.document_builder import PLACEHOLDER_WHY_POST, render_text  # noqa: E402
+from legacy.google.document_builder import PLACEHOLDER_WHY_POST, render_text  # noqa: E402
 from app.services.daily_pipeline import run_collection  # noqa: E402
-from app.services.weekly_pipeline import build_weekly_document  # noqa: E402
+from legacy.weekly_pipeline import build_weekly_document  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -112,7 +112,7 @@ def main() -> int:
             return 0
 
         if args.google:
-            from app.google.docs_writer import GoogleDocsError, create_weekly_doc
+            from legacy.google.docs_writer import GoogleDocsError, create_weekly_doc
 
             try:
                 url = create_weekly_doc(document, folder_id=settings.google_drive_folder_id or None)
