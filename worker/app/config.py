@@ -128,6 +128,9 @@ class Settings:
     google_drive_folder_id: str = ""
     weekly_output_dir: Path = PROJECT_ROOT / "output"
 
+    # The newsroom's clock. Week rotation happens Monday noon in this zone.
+    timezone: str = "America/New_York"
+
     # Logging
     log_level: str = "INFO"
 
@@ -234,6 +237,7 @@ def get_settings() -> Settings:
         google_client_secret_file=_env_str("GOOGLE_CLIENT_SECRET_FILE", "credentials.json"),
         google_drive_folder_id=_env_str("GOOGLE_DRIVE_FOLDER_ID", ""),
         weekly_output_dir=Path(_env_str("WEEKLY_OUTPUT_DIR", str(PROJECT_ROOT / "output"))),
+        timezone=_env_str("TIMEZONE", "America/New_York"),
         log_level=_env_str("LOG_LEVEL", "INFO").upper(),
     )
 

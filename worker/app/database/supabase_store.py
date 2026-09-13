@@ -207,6 +207,27 @@ class SupabaseStore:
             raise SupabaseError("Creating the weekly period returned no row.")
         return rows[0]
 
+    def rotate_period(self, start: date, end: date) -> dict[str, Any]:
+        """Close the active period and open ``start``-``end`` in one call.
+
+        Delegates to the SQL function so closing, opening and carrying pending
+        articles forward happen in a single transaction — doing it in steps
+        from here would leave a window with no active period, or two.
+        """
+        try:
+            response = self.client.rpc(
+                "rotate_weekly_period",
+                {"p_start": start.isoformat(), "p_end": end.isoformat()},
+            ).execute()
+        except Exception as exc:  # noqa: BLE001
+            raise SupabaseError(f"Could not rotate the weekly period: {exc}") from exc
+
+        data = response.data
+        period = data[0] if isinstance(data, list) and data else data
+        if not period:
+            raise SupabaseError("Rotating the weekly period returned no row.")
+        return period
+
     # ------------------------------------------------------------------ #
     # deduplication
     # ------------------------------------------------------------------ #
