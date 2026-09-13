@@ -20,3 +20,6 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+
+# Generated Weekly Wrap-Up files
+output/
