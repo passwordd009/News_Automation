@@ -14,10 +14,10 @@ from app.database.repository import (
     mark_selected,
     save_candidates,
 )
-from app.google.document_builder import PLACEHOLDER_WHY_POST, build_document, render_text
-from app.google.docs_writer import build_requests
+from legacy.google.document_builder import PLACEHOLDER_WHY_POST, build_document, render_text
+from legacy.google.docs_writer import build_requests
 from app.schemas import ArticleCandidate
-from app.services.weekly_pipeline import build_weekly_document, select_articles
+from legacy.weekly_pipeline import build_weekly_document, select_articles
 
 NOW = datetime.now(timezone.utc)
 START, END = NOW - timedelta(days=7), NOW

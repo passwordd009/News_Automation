@@ -180,7 +180,7 @@ set local role authenticated;
 select public.act_as('a0000000-0000-0000-0000-000000000001');
 
 do $$
-declare n int;
+declare n int; next_id uuid;
 begin
   select count(*) into n from public.articles;
   perform public.assert(n = 3, 'can see every article');
@@ -190,7 +190,7 @@ begin
   perform public.assert(n = 1, 'can change another user''s role');
 
   -- Rotating closes the current period and opens the next in one transaction.
-  perform public.rotate_weekly_period(date '2026-09-14', date '2026-09-20');
+  next_id := (public.rotate_weekly_period(date '2026-09-14', date '2026-09-20')).id;
 
   select count(*) into n from public.weekly_periods where status = 'active';
   perform public.assert(n = 1, 'rotating leaves exactly one active period');
@@ -199,10 +199,23 @@ begin
    where status = 'closed' and closed_at is not null;
   perform public.assert(n = 1, 'the previous period is closed and stamped');
 
-  -- Approved articles stay attached to the week they were published in (§7).
+  -- A decision is permanent: approved and declined articles stay with the
+  -- week they were decided in (§7), even after it closes.
   select count(*) into n from public.articles
-   where weekly_period_id = 'b0000000-0000-0000-0000-000000000001';
-  perform public.assert(n = 3, 'closing a period preserves its articles');
+   where weekly_period_id = 'b0000000-0000-0000-0000-000000000001'
+     and status in ('approved', 'declined');
+  perform public.assert(n = 2, 'decided articles stay with their closed week');
+
+  -- Indecision rolls forward, so articles collected Monday morning are not
+  -- stranded in a week that closes at noon.
+  select count(*) into n from public.articles
+   where weekly_period_id = next_id and status = 'pending';
+  perform public.assert(n = 1, 'undecided articles move into the new week');
+
+  select count(*) into n from public.articles
+   where weekly_period_id = 'b0000000-0000-0000-0000-000000000001'
+     and status = 'pending';
+  perform public.assert(n = 0, 'no pending article is left behind in a closed week');
 end;
 $$;
 rollback;

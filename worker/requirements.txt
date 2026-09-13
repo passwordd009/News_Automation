@@ -13,3 +13,4 @@ google-auth-oauthlib>=1.2
 
 # Development
 pytest>=8.0
+supabase>=2.3

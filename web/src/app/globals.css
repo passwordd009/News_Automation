@@ -1,0 +1,73 @@
+@import "tailwindcss";
+
+/**
+ * Project Hestia — clean, editorial, easy to scan.
+ *
+ * Orange is the accent and outline colour (§15), not a background wash: rules,
+ * borders, active navigation, focus rings and the weekly-period emphasis. The
+ * page itself stays neutral so article text carries the weight.
+ */
+
+:root {
+  --background: #fcfbf9;
+  --surface: #ffffff;
+  --foreground: #1c1917;
+  --muted: #78716c;
+  --border: #e7e5e4;
+
+  /* The Hestia accent. */
+  --accent: #ea580c;
+  --accent-strong: #c2410c;
+  --accent-soft: #fff4ed;
+  --accent-border: #fdba74;
+
+  --positive: #15803d;
+  --negative: #b91c1c;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0c0a09;
+    --surface: #1c1917;
+    --foreground: #f5f5f4;
+    --muted: #a8a29e;
+    --border: #292524;
+
+    --accent: #fb923c;
+    --accent-strong: #fdba74;
+    --accent-soft: #2a1608;
+    --accent-border: #7c2d12;
+
+    --positive: #4ade80;
+    --negative: #f87171;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-border: var(--accent-border);
+  --color-positive: var(--positive);
+  --color-negative: var(--negative);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* One visible focus treatment everywhere, in the accent colour. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}

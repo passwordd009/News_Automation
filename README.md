@@ -1,231 +1,250 @@
-# Project Hestia — Weekly Wrap-Up News Automation
+# Project Hestia — Weekly Wrap-Up
 
-Automates news discovery and curation for Project Hestia's weekly Instagram
-"Weekly Wrap-Up," which helps New Yorkers stay informed about events, programs,
-developments and useful local news.
+An editorial content management system for Project Hestia's weekly Instagram
+"Weekly Wrap-Up," which helps New Yorkers learn about useful, informative and
+community-focused developments from the previous week.
 
-The system collects NYC news daily, deduplicates it, has an LLM evaluate each
-article against Hestia's editorial goals, and generates a Google Doc of the best
-stories each week. **Nothing is ever published automatically** — the weekly doc
-is a draft for the Hestia team to review and edit.
+A Python worker collects NYC news, screens it with a local LLM, and files it
+for review. A Next.js dashboard is where people approve, decline and organise
+stories by editorial week.
 
-## Status
+**The AI recommends. People decide. Nothing is ever posted automatically.**
 
-| Phase | Scope | Status |
-|-------|---------------------------------------------|--------|
-| 1 | Article models, SQLite database, RSS collector | ✅ Done |
-| 2 | Deduplication (URL + title; embeddings deferred) | ✅ Done |
-| 3 | Ollama LLM reviewer | ⬜ **Next** |
-| 4 | Scoring and approval | ⬜ |
-| 5 | Terminal report of approved stories | ⬜ |
-| 6 | Weekly doc generation (local file + Google Docs) | ✅ Done |
-| 7 | Gmail newsletter ingestion | ⬜ |
-| 8 | Optional news API collector | ⬜ |
-| 9 | Scheduling (cron / GitHub Actions) | ⬜ |
-| 10 | Tests, monitoring, documentation | 🟨 40 tests passing |
+---
 
-**Phase 6 landed before Phase 3**, so the document works end to end but each
-entry's `Why post` is an explicit placeholder rather than written prose, and
-`Topic` reads `Uncategorized`. The LLM reviewer fills both in.
+## How the pieces fit
 
-## Quick start
+```
+  RSS / Gmail / news API
+            │
+            ▼
+   worker/  (Python)
+   collect → normalize → deduplicate → AI review
+            │
+            ▼
+     Supabase (Postgres + Auth + RLS)
+            │
+            ▼
+   web/  (Next.js dashboard)
+   Review → Approve / Decline → Weekly archive
+```
 
-Requires Python 3.12+ (the code also runs on 3.11).
+| Directory | What it is |
+|---|---|
+| `worker/` | Python ingestion and AI screening |
+| `web/` | Next.js editorial dashboard |
+| `supabase/` | Migrations, RLS policies, and their tests — the schema is the contract between the two |
+| `docs/` | The CMS spec and the migration plan |
+| `worker/legacy/` | The retired Google Docs workflow, kept for reference |
+
+## The editorial week
+
+Weeks run **Monday to Sunday**. Stories are ready by Sunday night and posted
+Monday morning, so a period stays *active* until **Monday at 12:00** — the week
+being posted is still the current one while it goes out.
+
+At noon the week rotates: it closes, the next opens, and any article still
+awaiting a decision moves forward with it. A decision is permanent; indecision
+rolls over.
+
+---
+
+## Setup
+
+Needs **Python 3.12+** (3.11 works), **Node 20+**, a **Supabase project**, and
+**[Ollama](https://ollama.com)** for the AI screening.
+
+### 1. Database
+
+```bash
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
+
+Then create your account through the app (step 4 below) and promote it once:
+
+```bash
+# Edit the email inside first
+psql "$SUPABASE_DB_URL" -f supabase/seed_admin.sql
+```
+
+This is deliberately manual. "Whoever signs up first becomes admin" is a race,
+and a hardcoded email in version control is worse.
+
+### 2. The worker
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
+source .venv/bin/activate                    # Windows: .venv\Scripts\activate
 pip install -r worker/requirements.txt
-cp .env.example .env               # optional; defaults work out of the box
+
+cp worker/.env.example worker/.env           # then fill it in
 ```
 
-**One command does everything** — collect fresh articles, store them, and build
-the document:
+Fill in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from **Project Settings
+→ API**.
+
+> The service-role key **bypasses Row Level Security entirely**. It belongs in
+> `worker/.env` and nowhere else — never in `web/`, never committed.
+
+### 3. The model
 
 ```bash
-python worker/scripts/generate_weekly_doc.py
+ollama serve
+ollama pull llama3.1
 ```
 
-That writes `output/weekly-wrap-up-YYYY-MM-DD.txt` and prints it. To create a
-real Google Doc instead, see [Google Docs output](#google-docs-output) below:
+Any Ollama model works; set `OLLAMA_MODEL`. The provider sits behind an
+interface, so Claude, OpenAI or Gemini can replace it by registering a client
+in `worker/app/llm/client.py` — nothing else changes.
+
+### 4. The dashboard
 
 ```bash
-python worker/scripts/generate_weekly_doc.py --google
+cd web
+npm install
+cp .env.example .env.local                   # then fill it in
+npm run dev
 ```
 
-Use `worker/scripts/collect_articles.py` when you want to collect *without* building a
-document — for example from a daily cron job that feeds a weekly one.
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` come from the
+same API settings page. These two are public by design — the anon key can only
+do what RLS permits the signed-in user to do.
 
-Useful flags:
+Open http://localhost:3000, create your account, then run `seed_admin.sql`.
+
+---
+
+## Running it
+
+### Check everything is connected
 
 ```bash
-# Collection
-python worker/scripts/collect_articles.py --limit 20                         # cap output
-python worker/scripts/collect_articles.py --feed https://gothamist.com/feed  # one feed only
-python worker/scripts/collect_articles.py --json                             # machine-readable
-python worker/scripts/collect_articles.py --no-save                          # preview, store nothing
-
-# Weekly document (collects first unless told otherwise)
-python worker/scripts/generate_weekly_doc.py --no-collect     # use what is already stored
-python worker/scripts/generate_weekly_doc.py --dry-run        # print it, change nothing
-python worker/scripts/generate_weekly_doc.py --days 14        # widen the window
-python worker/scripts/generate_weekly_doc.py --max 8          # cap the article count
-python worker/scripts/generate_weekly_doc.py --approved-only  # LLM-approved only (Phase 3+)
-python worker/scripts/generate_weekly_doc.py --out draft.txt  # choose the output path
+python worker/scripts/ingest.py --check
 ```
 
-`--dry-run` is the safe way to look: a normal run marks the articles it used as
-`selected` so they cannot appear in a later Wrap-Up.
+Reports on Supabase and the model separately, and says what to fix.
 
-Sample document:
-
-```
-WEEKLY WRAP-UP
-
-DATE: September 6, 2026 - September 13, 2026
-
-
-Topic: Small Business
-
-URL:
-https://example.com/grants
-
-Description:
-The city announced $5 million in grants for businesses affected by construction.
-
-Why post:
-[Needs review — the LLM reviewer (Phase 3) has not written this yet.]
-
---------------------------------------------
-```
-
-## Google Docs output
-
-Only needed for `--google`; the local file needs no setup.
-
-1. In [Google Cloud Console](https://console.cloud.google.com/), create a
-   project and enable both the **Google Docs API** and the **Google Drive API**.
-2. Create an OAuth client ID of type **Desktop app**, download the JSON, and
-   save it as `credentials.json` in the project root.
-3. Run `python worker/scripts/generate_weekly_doc.py --google`. A browser opens once
-   for consent; the resulting `token.json` is reused afterwards.
-
-Both files are gitignored. Set `GOOGLE_DRIVE_FOLDER_ID` to drop the doc into a
-specific Drive folder. The doc is fully editable by the Hestia team — and
-nothing is ever posted to Instagram automatically.
-
-Run the tests (no network needed — feeds are served from fixtures):
+### Collect and screen articles
 
 ```bash
-pytest tests/ -q
+python worker/scripts/ingest.py                 # the daily run
+python worker/scripts/ingest.py --limit 5       # try a few first
+python worker/scripts/ingest.py --dry-run       # screen, write nothing
 ```
 
-## Layout
+Everything lands as `pending`. The worker cannot approve — that invariant is
+enforced in code, and RLS enforces it for everyone else.
 
-The repository is a monorepo. `supabase/migrations/` is the schema contract
-shared by both sides.
+### Review
 
-```
-worker/                       Python ingestion + AI screening
-├── app/
-│   ├── collectors/           # one module per source, all behind NewsCollector
-│   │   ├── base.py           # the NewsCollector interface + safe_fetch guard rail
-│   │   └── rss_collector.py
-│   ├── processing/
-│   │   ├── url_normalizer.py
-│   │   └── deduplicator.py   # title fingerprints + similarity (Level 1 & 2)
-│   ├── database/
-│   │   ├── models.py         # SQLAlchemy Article + ArticleStatus
-│   │   ├── database.py       # engine, session_scope(), init_db()
-│   │   └── repository.py     # all queries live here
-│   ├── google/               # legacy — deprecated by the CMS migration
-│   ├── services/
-│   │   ├── daily_pipeline.py # fetch from every enabled collector + store
-│   │   └── weekly_pipeline.py
-│   ├── llm/                  # the reviewer lands here
-│   ├── schemas.py            # ArticleCandidate + ArticleReview (Pydantic)
-│   └── config.py             # environment-driven settings
-├── config/rss_feeds.json     # the feed list — configuration, not code
-├── scripts/
-└── tests/
+Open `/review` in the dashboard. Reconsiderations come first, then the AI's
+recommendations, then by score. Low scorers sink to the bottom rather than
+being hidden: the decision is yours to make, not the model's.
 
-web/                          Next.js editorial dashboard (not built yet)
-supabase/migrations/          the schema — single source of truth
-docs/                         CMS spec + migration plan
+### Rotate the week
+
+```bash
+python worker/scripts/rotate_week.py --status   # report, change nothing
+python worker/scripts/rotate_week.py            # rotate if due
 ```
 
-## Configuration
+Safe to run any time — it does nothing unless rotation is actually due, so a
+retry or misfire cannot cut a week short.
 
-Everything is environment-driven; see `.env.example` for the full list. The
-values you are most likely to touch:
+### On a schedule
 
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `DATABASE_URL` | `sqlite:///hestia_news.db` | Storage. A relative SQLite path is resolved against the project root, so the commands find the same database whatever directory you run them from. Swap for Postgres later without code changes. |
-| `ENABLE_RSS` / `ENABLE_GMAIL` / `ENABLE_NEWS_API` | `true` / `false` / `false` | Turn collectors on and off. |
-| `RSS_FEEDS_FILE` | `config/rss_feeds.json` (relative to `worker/`) | Where the feed list lives. |
-| `RSS_FEEDS` | — | Comma-separated URLs; overrides the file entirely. |
-| `LOOKBACK_DAYS` | `2` | Ignore entries older than this. |
-| `MIN_ARTICLE_SCORE` | `7` | Approval threshold (Phase 4). |
-| `OLLAMA_MODEL` | `llama3.1` | Local model to review articles (Phase 3). |
+```cron
+# Collect and screen every morning
+0 6 * * *  cd /path/to/repo && .venv/bin/python worker/scripts/ingest.py
 
-### Adding or muting a feed
-
-Edit `worker/config/rss_feeds.json` — no code changes:
-
-```json
-{ "name": "Chalkbeat New York", "url": "https://www.chalkbeat.org/...", "enabled": true }
+# Close the week Monday at noon, after the post goes out
+0 12 * * 1 cd /path/to/repo && .venv/bin/python worker/scripts/rotate_week.py
 ```
 
-Set `"enabled": false` to mute a feed without losing the URL.
+---
 
-## Design notes
+## Roles
 
-**Collectors share one interface.** Every source implements
-`NewsCollector.fetch_articles() -> list[ArticleCandidate]`, so the pipeline
-never knows or cares whether a story came from RSS, a Gmail newsletter or a
-news API. `safe_fetch()` wraps each collector so a dead feed, a timeout or a
-malformed entry is logged and skipped — one broken source never ends a run.
+| | Admin | Approver | Content Creator |
+|---|:---:|:---:|:---:|
+| See the pending queue | ✅ | ✅ | — |
+| Approve / decline | ✅ | ✅ | — |
+| Edit editorial fields | ✅ | ✅ | — |
+| View approved, declined, archive | ✅ | ✅ | ✅ |
+| Request reconsideration | ✅ | — | ✅ |
+| Resolve reconsideration | ✅ | ✅ | — |
+| Manage roles and weeks | ✅ | — | — |
 
-**URLs are normalized before anything else.** Tracking parameters (`utm_*`,
-`fbclid`, `mc_cid`, …), `www.`, default ports, fragments and trailing slashes
-are stripped, and query parameters are sorted. This is what makes exact-URL
-deduplication work in Phase 2, and it happens inside `ArticleCandidate`
-validation so no collector can forget to do it.
+Everyone starts as a Content Creator. An admin promotes them.
 
-**Positive is not the same as appropriate.** `ArticleReview.overall_score`
-weights NYC relevance 30%, community value 25%, informative value 20%,
-credibility 15%, and positivity and local-event value 5% each. An informative
-housing-policy dispute with a positivity score of 4 can still score well above
-the approval line — which is the intent. Thresholds are configurable, and
-approval also requires a minimum NYC relevance and credibility.
+Authorization exists at three layers, and only one of them is security:
+navigation hides what you cannot use, the server refuses the route, and
+**Supabase RLS refuses the data**. The first two are convenience. The third is
+the boundary — hiding a button is not access control.
 
-**LLM output is never trusted.** Every response must parse into the
-`ArticleReview` Pydantic model, with scores range-checked 0–10, before it can
-affect anything. A rejected review without a stated reason gets one filled in
-rather than being stored blank.
+---
 
-**Article history is permanent.** Articles move through
-`candidate → reviewed → approved/rejected → selected → posted`, and the URL
-column is unique, so a story cannot appear in two different Weekly Wrap-Ups.
+## Testing
 
-**The document format has no Google dependency.** `document_builder.py` owns the
-layout and renders to text; `docs_writer.py` turns the same structure into
-Google Docs API calls. The format is therefore fully testable offline, and the
-destination is swappable.
+```bash
+# Worker — no network, no Ollama needed
+cd worker && pytest tests/ -q
 
-**Missing data is flagged, never invented.** Before the LLM reviewer exists,
-`Description` falls back to the article's own summary and `Why post` is an
-explicit `[Needs review]` placeholder. The generator never writes a
-justification it cannot support.
+# RLS policies, against a throwaway local Postgres
+./supabase/tests/run_local_rls_tests.sh
 
-## Next: Phase 3
+# Dashboard
+cd web && npm run typecheck && npm test && npm run build
+```
 
-The Ollama reviewer, behind an `LLMClient` interface so Claude, OpenAI or
-Gemini can replace it later. That fills in `Topic`, `Description` and
-`Why post`, enables `--approved-only`, and activates the scoring thresholds
-already defined in `schemas.py`.
+The RLS suite is the one worth understanding. It starts a real PostgreSQL
+cluster, shims what Supabase normally provides, applies the actual migration
+files, and then acts as each role with a real `auth.uid()` — proving, for
+example, that a Content Creator's approval updates **zero rows**. Policies are
+tested, not eyeballed.
 
-Known gap for Phase 3: near-duplicate titles are collapsed *within* one
-document, but a story very similar to one used in a **previous** week is not
-yet caught — only exact article reuse is blocked, via the `selected` status.
+---
+
+## Troubleshooting
+
+**`ingest.py` aborts saying the model is unreachable.** Deliberate. If the
+model is down, filing a whole run of unscored articles would bury the review
+queue, so the run stops instead. Start Ollama and retry.
+
+**The review queue is empty.** Either nothing has been collected yet, or
+everything was a duplicate. `ingest.py` prints both counts.
+
+**An article was collected but does not appear.** Check its status — an
+article already approved or declined leaves the queue. Duplicates are never
+inserted twice: `normalized_url` is unique, and near-identical headlines are
+caught by a title fingerprint.
+
+**Signed in but every page bounces to login.** Your account probably has no
+`profiles` row. A missing profile is treated as unauthenticated rather than
+defaulted to a role. Check that the signup trigger exists and re-run
+`seed_admin.sql`.
+
+**The dashboard shows nothing where you expect rows.** That is usually RLS
+doing its job. A Content Creator cannot see pending articles at all, so the
+review queue is legitimately empty for them.
+
+---
+
+## Status
+
+| Step | | |
+|---|---|:---:|
+| 1 | Monorepo layout | ✅ |
+| 2 | Supabase schema + RLS | ✅ |
+| 3 | LLM reviewer | ✅ |
+| 4 | Worker writes to Supabase | ✅ |
+| 5 | Dashboard auth and role guards | ✅ |
+| 6 | `/review` queue | ✅ |
+| 7 | `/approved` weekly feed | ⬜ |
+| 8 | `/archive` | ⬜ |
+| 9 | `/declined` + reconsideration | ⬜ |
+| 10 | Cleanup job for expired declined content | ⬜ |
+
+See `docs/MIGRATION_PLAN.md` for the detail, and
+`docs/HESTIA_NEWS_CMS_SPEC.md` for the product spec.

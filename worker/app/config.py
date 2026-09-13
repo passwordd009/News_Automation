@@ -93,7 +93,9 @@ class FeedConfig:
 class Settings:
     """Runtime settings for the whole application."""
 
-    # Storage
+    # Storage — Supabase is the source of truth; SQLite is legacy only.
+    supabase_url: str = ""
+    supabase_service_role_key: str = ""
     database_url: str = "sqlite:///hestia_news.db"
 
     # Collectors
@@ -125,6 +127,9 @@ class Settings:
     google_client_secret_file: str = "credentials.json"
     google_drive_folder_id: str = ""
     weekly_output_dir: Path = PROJECT_ROOT / "output"
+
+    # The newsroom's clock. Week rotation happens Monday noon in this zone.
+    timezone: str = "America/New_York"
 
     # Logging
     log_level: str = "INFO"
@@ -204,6 +209,8 @@ def get_settings() -> Settings:
     """Load settings once per process."""
     feeds_file = os.getenv("RSS_FEEDS_FILE", "").strip()
     return Settings(
+        supabase_url=_env_str("SUPABASE_URL", ""),
+        supabase_service_role_key=_env_str("SUPABASE_SERVICE_ROLE_KEY", ""),
         database_url=_absolute_sqlite_url(_env_str("DATABASE_URL", "sqlite:///hestia_news.db")),
         enable_rss=_env_bool("ENABLE_RSS", True),
         enable_gmail=_env_bool("ENABLE_GMAIL", False),
@@ -230,6 +237,7 @@ def get_settings() -> Settings:
         google_client_secret_file=_env_str("GOOGLE_CLIENT_SECRET_FILE", "credentials.json"),
         google_drive_folder_id=_env_str("GOOGLE_DRIVE_FOLDER_ID", ""),
         weekly_output_dir=Path(_env_str("WEEKLY_OUTPUT_DIR", str(PROJECT_ROOT / "output"))),
+        timezone=_env_str("TIMEZONE", "America/New_York"),
         log_level=_env_str("LOG_LEVEL", "INFO").upper(),
     )
 

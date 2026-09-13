@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 
 from app.config import PROJECT_ROOT, get_settings
-from app.google.document_builder import SEPARATOR, WeeklyDocument
+from legacy.google.document_builder import SEPARATOR, WeeklyDocument
 
 logger = logging.getLogger(__name__)
 
