@@ -1,0 +1,17 @@
+"use client";
+
+import { createBrowserClient } from "@supabase/ssr";
+
+/**
+ * Supabase for the browser, using the anon key.
+ *
+ * Every request from here carries the signed-in user's JWT, so RLS applies
+ * exactly as written. The service-role key must never reach this file — it
+ * bypasses RLS, and anything in the browser bundle is public.
+ */
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+}
