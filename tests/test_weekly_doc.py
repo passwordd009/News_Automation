@@ -251,6 +251,22 @@ def test_generating_the_doc_marks_articles_as_used(session):
     assert all(a.selected_at is not None for a in chosen)
 
 
+def test_articles_discovered_during_this_run_are_still_in_the_window(session):
+    """The window must not drop articles collected moments ago.
+
+    An upper bound captured before collection excluded everything that run had
+    just discovered, so a collect-then-generate command found nothing.
+    """
+    start, end = default_week_window()
+    # Discovered after the window's nominal end, as happens mid-run.
+    session.add(_article("Just collected", "Community", None, discovered_at=end + timedelta(seconds=30)))
+    session.commit()
+
+    assert [a.title for a in get_articles_in_window(session, start=start)] == ["Just collected"]
+    # An explicit upper bound is still honoured for a historical slice.
+    assert get_articles_in_window(session, start=start, end=end) == []
+
+
 def test_approved_only_filters_out_unreviewed_articles(session):
     approved = _article("Approved story", "Education", 9.0)
     approved.approved = True

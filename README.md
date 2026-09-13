@@ -37,11 +37,10 @@ python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env               # optional; defaults work out of the box
-
-python scripts/collect_articles.py
 ```
 
-Collected articles are stored in `hestia_news.db`. Then build the document:
+**One command does everything** — collect fresh articles, store them, and build
+the document:
 
 ```bash
 python scripts/generate_weekly_doc.py
@@ -54,6 +53,9 @@ real Google Doc instead, see [Google Docs output](#google-docs-output) below:
 python scripts/generate_weekly_doc.py --google
 ```
 
+Use `scripts/collect_articles.py` when you want to collect *without* building a
+document — for example from a daily cron job that feeds a weekly one.
+
 Useful flags:
 
 ```bash
@@ -63,7 +65,8 @@ python scripts/collect_articles.py --feed https://gothamist.com/feed  # one feed
 python scripts/collect_articles.py --json                             # machine-readable
 python scripts/collect_articles.py --no-save                          # preview, store nothing
 
-# Weekly document
+# Weekly document (collects first unless told otherwise)
+python scripts/generate_weekly_doc.py --no-collect     # use what is already stored
 python scripts/generate_weekly_doc.py --dry-run        # print it, change nothing
 python scripts/generate_weekly_doc.py --days 14        # widen the window
 python scripts/generate_weekly_doc.py --max 8          # cap the article count
@@ -135,6 +138,7 @@ app/
 │   ├── document_builder.py   # the Wrap-Up format — no Google dependency
 │   └── docs_writer.py        # uploads that format to Google Docs
 ├── services/
+│   ├── daily_pipeline.py     # fetch from every enabled collector + store
 │   └── weekly_pipeline.py    # article selection + document assembly
 ├── llm/                      # Phase 3
 ├── schemas.py                # ArticleCandidate + ArticleReview (Pydantic)
@@ -152,7 +156,7 @@ values you are most likely to touch:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `DATABASE_URL` | `sqlite:///hestia_news.db` | Storage. Swap for Postgres later without code changes. |
+| `DATABASE_URL` | `sqlite:///hestia_news.db` | Storage. A relative SQLite path is resolved against the project root, so the commands find the same database whatever directory you run them from. Swap for Postgres later without code changes. |
 | `ENABLE_RSS` / `ENABLE_GMAIL` / `ENABLE_NEWS_API` | `true` / `false` / `false` | Turn collectors on and off. |
 | `RSS_FEEDS_FILE` | `config/rss_feeds.json` | Where the feed list lives. |
 | `RSS_FEEDS` | — | Comma-separated URLs; overrides the file entirely. |

@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Phase 1 CLI: collect articles and print them.
+"""Collect articles, print them, and store them in the database.
 
-This script only *reads* sources — it does not review, score or store anything.
+Collection only. To collect *and* build the Weekly Wrap-Up in one step, use
+``scripts/generate_weekly_doc.py`` instead — it does both.
 
     python scripts/collect_articles.py
     python scripts/collect_articles.py --limit 20
     python scripts/collect_articles.py --feed https://gothamist.com/feed
-    python scripts/collect_articles.py --json
+    python scripts/collect_articles.py --no-save
 """
 
 from __future__ import annotations
@@ -14,17 +15,15 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.collectors.rss_collector import RSSCollector  # noqa: E402
 from app.config import FeedConfig, configure_logging, get_settings  # noqa: E402
-from app.database.database import init_db, session_scope  # noqa: E402
-from app.database.repository import save_candidates  # noqa: E402
 from app.processing.url_normalizer import domain_of  # noqa: E402
 from app.schemas import ArticleCandidate  # noqa: E402
+from app.services.daily_pipeline import run_collection  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -82,13 +81,8 @@ def main() -> int:
         print("RSS collection is disabled (ENABLE_RSS=false).", file=sys.stderr)
         return 1
 
-    articles = collector.safe_fetch()
-    # Newest first; entries with no publication date sort last.
-    oldest = datetime.min.replace(tzinfo=timezone.utc)
-    articles.sort(key=lambda item: item.published_at or oldest, reverse=True)
-
-    if args.limit is not None:
-        articles = articles[: args.limit]
+    stats = run_collection(settings, feeds=feeds, save=not args.no_save, limit=args.limit)
+    articles = stats.articles
 
     if args.json:
         print(json.dumps([article.model_dump(mode="json") for article in articles], indent=2))
@@ -105,14 +99,8 @@ def main() -> int:
         print("\nPreview only — nothing was saved (--no-save).")
         return 0
 
-    init_db()
-    with session_scope() as session:
-        result = save_candidates(session, articles)
-
-    print(f"\nSaved: {result.saved}   Duplicates: {result.duplicates}", end="")
-    if result.failed:
-        print(f"   Failed: {result.failed}", end="")
-    print(f"\nStored in {settings.database_url}")
+    print(f"\n{stats.format_summary()}")
+    print(f"Stored in {settings.database_url}")
     print("Build the Weekly Wrap-Up with: python scripts/generate_weekly_doc.py")
     return 0
 

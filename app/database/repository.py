@@ -90,16 +90,22 @@ def get_articles_in_window(
     session: Session,
     *,
     start: datetime,
-    end: datetime,
+    end: datetime | None = None,
     approved_only: bool = False,
     exclude_selected: bool = True,
 ) -> list[Article]:
-    """Articles discovered between ``start`` and ``end``.
+    """Articles discovered since ``start``.
+
+    ``end`` is optional and normally omitted. An upper bound captured before a
+    collection run would exclude the articles that run just discovered, so the
+    window is open-ended unless a caller genuinely wants a historical slice.
 
     ``exclude_selected`` keeps a story that already appeared in one Weekly
     Wrap-Up from appearing in another.
     """
-    statement = select(Article).where(Article.discovered_at >= start, Article.discovered_at <= end)
+    statement = select(Article).where(Article.discovered_at >= start)
+    if end is not None:
+        statement = statement.where(Article.discovered_at <= end)
 
     if approved_only:
         statement = statement.where(Article.approved.is_(True))
