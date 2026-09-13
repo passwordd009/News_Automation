@@ -106,9 +106,13 @@ class Settings:
     max_articles_per_feed: int = 40
     lookback_days: int = 2
 
-    # LLM (Phase 3 — read here so nothing else needs to know about Ollama)
+    # LLM — read here so nothing else needs to know which provider is in use
+    llm_provider: str = "ollama"
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1"
+    llm_timeout: int = 120
+    llm_temperature: float = 0.2
+    llm_max_attempts: int = 2
 
     # Scoring thresholds (Phase 4)
     min_article_score: float = 7.0
@@ -212,8 +216,12 @@ def get_settings() -> Settings:
         ),
         max_articles_per_feed=_env_int("MAX_ARTICLES_PER_FEED", 40),
         lookback_days=_env_int("LOOKBACK_DAYS", 2),
+        llm_provider=_env_str("LLM_PROVIDER", "ollama"),
         ollama_url=_env_str("OLLAMA_URL", "http://localhost:11434"),
         ollama_model=_env_str("OLLAMA_MODEL", "llama3.1"),
+        llm_timeout=_env_int("LLM_TIMEOUT", 120),
+        llm_temperature=_env_float("LLM_TEMPERATURE", 0.2),
+        llm_max_attempts=_env_int("LLM_MAX_ATTEMPTS", 2),
         min_article_score=_env_float("MIN_ARTICLE_SCORE", 7.0),
         min_nyc_relevance=_env_float("MIN_NYC_RELEVANCE", 6.0),
         min_credibility=_env_float("MIN_CREDIBILITY", 6.0),

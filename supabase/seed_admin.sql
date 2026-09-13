@@ -27,10 +27,13 @@ begin
 end;
 $$;
 
--- Open the first editorial week if none exists yet. Adjust the dates to your
--- Sunday-Saturday boundary.
+-- Open the first editorial week if none exists yet.
+--
+-- Hestia posts each Monday covering the week just ended, so a period runs
+-- Monday through Sunday. Postgres date_trunc('week', ...) already returns the
+-- ISO Monday, so this is the Monday of the current week through that Sunday.
 insert into public.weekly_periods (start_date, end_date, status)
-select date_trunc('week', current_date)::date - 1,
-       date_trunc('week', current_date)::date + 5,
+select date_trunc('week', current_date)::date,
+       date_trunc('week', current_date)::date + 6,
        'active'
 where not exists (select 1 from public.weekly_periods where status = 'active');
