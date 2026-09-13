@@ -13,31 +13,31 @@ Answers to the eight questions in §26 of the spec.
 
 ### Where is news fetched?
 
-`app/collectors/rss_collector.py` — the only implemented source. Every collector
-subclasses `NewsCollector` (`app/collectors/base.py`), whose `safe_fetch()`
+`worker/app/collectors/rss_collector.py` — the only implemented source. Every collector
+subclasses `NewsCollector` (`worker/app/collectors/base.py`), whose `safe_fetch()`
 guarantees a dead feed degrades a run instead of ending it. Feeds are
-configuration, not code: `config/rss_feeds.json`, overridable via `RSS_FEEDS`.
+configuration, not code: `worker/config/rss_feeds.json`, overridable via `RSS_FEEDS`.
 
-`app/services/daily_pipeline.py` orchestrates fetch → normalize → dedupe →
+`worker/app/services/daily_pipeline.py` orchestrates fetch → normalize → dedupe →
 store. Gmail and the news API join `build_collectors()` when built.
 
 ### What is the current article structure?
 
-Pydantic models in `app/schemas.py`:
+Pydantic models in `worker/app/schemas.py`:
 
 - **`ArticleCandidate`** — `title, url, source, published_at, snippet, author, collector, discovered_at`. Normalizes its own URL during validation, so no collector can skip it.
 - **`ArticleReview`** — the six scores plus `appropriate, topic, borough, summary, why_post, rejection_reason`. Range-checked 0–10. **Not yet produced by anything** — there is no LLM reviewer.
 
-The stored row is `Article` in `app/database/models.py` (SQLAlchemy, SQLite).
+The stored row is `Article` in `worker/app/database/models.py` (SQLAlchemy, SQLite).
 
 ### Where is Google Docs generation?
 
 | File | Fate |
 |---|---|
-| `app/google/docs_writer.py` | Deprecated — OAuth + Docs API calls |
-| `app/google/document_builder.py` | Deprecated as output; field mapping is trivial |
-| `scripts/generate_weekly_doc.py` | Deprecated as the main command |
-| `app/services/weekly_pipeline.py` | **Obsolete by design** — see below |
+| `worker/app/google/docs_writer.py` | Deprecated — OAuth + Docs API calls |
+| `worker/app/google/document_builder.py` | Deprecated as output; field mapping is trivial |
+| `worker/scripts/generate_weekly_doc.py` | Deprecated as the main command |
+| `worker/app/services/weekly_pipeline.py` | **Obsolete by design** — see below |
 
 `weekly_pipeline.select_articles()` algorithmically picks 5–10 articles with
 topic diversity. Under the new architecture **humans do that selection** in
@@ -59,15 +59,15 @@ login are all greenfield.
 
 ### What can be reused?
 
-**Keep as-is** — `collectors/`, `processing/url_normalizer.py`,
-`processing/deduplicator.py`, `schemas.py`, `config.py`,
-`services/daily_pipeline.py`. This is the ingestion core §21 says to preserve.
+**Keep as-is** — `worker/app/collectors/`, `worker/app/processing/url_normalizer.py`,
+`worker/app/processing/deduplicator.py`, `schemas.py`, `config.py`,
+`worker/app/services/daily_pipeline.py`. This is the ingestion core §21 says to preserve.
 
-**Adapt** — `database/repository.py` (queries move to a Supabase client),
-`database/models.py` (becomes the SQL migration).
+**Adapt** — `worker/app/database/repository.py` (queries move to a Supabase client),
+`worker/app/database/models.py` (becomes the SQL migration).
 
-**Deprecate** — `app/google/`, `scripts/generate_weekly_doc.py`,
-`services/weekly_pipeline.py`.
+**Deprecate** — `worker/app/google/`, `worker/scripts/generate_weekly_doc.py`,
+`worker/app/services/weekly_pipeline.py`.
 
 ---
 
@@ -123,7 +123,7 @@ Each step is independently reviewable and leaves the repo working.
 | 1 | Restructure to the monorepo layout — pure `git mv`, no logic changes | ✅ tests pass |
 | 2 | Supabase schema + RLS migrations | ✅ **local Postgres** |
 | 3 | LLM reviewer behind `LLMClient` (the missing Phase 3) | ✅ fake-client tests |
-| 4 | Python writes to Supabase; isolate `app/google/` | ⚠️ mocked only |
+| 4 | Python writes to Supabase; isolate `worker/app/google/` | ⚠️ mocked only |
 | 5 | Next.js scaffold, auth, roles, route guards | ✅ typecheck + build |
 | 6 | `/review` queue — approve / decline | ✅ build only |
 | 7 | `/approved` feed + weekly periods | ✅ build only |
