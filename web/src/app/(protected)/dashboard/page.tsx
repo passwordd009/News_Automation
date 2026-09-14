@@ -3,6 +3,8 @@ import { requireProfile } from "@/lib/auth/getCurrentProfile";
 import { can, ROLE_LABELS } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import type { WeeklyPeriod } from "@/types/database";
+import { RunIngestButton } from "@/components/articles/RunIngestButton";
+import { workerAvailable } from "@/lib/worker/localWorker";
 
 export const metadata = { title: "Dashboard · Project Hestia" };
 
@@ -30,6 +32,8 @@ export default async function DashboardPage({
     .select("*")
     .eq("status", "active")
     .maybeSingle<WeeklyPeriod>();
+
+  const showCollect = can(profile.role, "viewPendingQueue") && workerAvailable();
 
   const links = [
     { href: "/review", label: "Review queue", capability: "viewPendingQueue" as const },
@@ -61,6 +65,12 @@ export default async function DashboardPage({
           {formatRange(period ?? null)}
         </p>
       </div>
+
+      {showCollect && (
+        <div className="mt-8 rounded-lg border border-border bg-surface px-5 py-4">
+          <RunIngestButton />
+        </div>
+      )}
 
       <ul className="mt-8 grid gap-3 sm:grid-cols-2">
         {links.map((link) => (
