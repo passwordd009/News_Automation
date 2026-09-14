@@ -60,18 +60,21 @@ alter table public.approval_requests enable row level security;
 
 -- Everyone can read their own profile; reviewers can read all, so the UI can
 -- show who approved or declined a story.
+drop policy if exists profiles_select_self_or_reviewer on public.profiles;
 create policy profiles_select_self_or_reviewer on public.profiles
   for select to authenticated
   using (id = auth.uid() or public.is_reviewer());
 
 -- You may edit your own profile but NOT your own role (§17). The new row's role
 -- must match the role you already have.
+drop policy if exists profiles_update_self_not_role on public.profiles;
 create policy profiles_update_self_not_role on public.profiles
   for update to authenticated
   using (id = auth.uid())
   with check (id = auth.uid() and role = public.current_role_name());
 
 -- Only an admin manages roles.
+drop policy if exists profiles_admin_manage on public.profiles;
 create policy profiles_admin_manage on public.profiles
   for update to authenticated
   using (public.is_admin())
@@ -81,14 +84,17 @@ create policy profiles_admin_manage on public.profiles
 -- weekly_periods
 -- ---------------------------------------------------------------------------
 
+drop policy if exists weekly_periods_select_all on public.weekly_periods;
 create policy weekly_periods_select_all on public.weekly_periods
   for select to authenticated
   using (true);
 
+drop policy if exists weekly_periods_admin_insert on public.weekly_periods;
 create policy weekly_periods_admin_insert on public.weekly_periods
   for insert to authenticated
   with check (public.is_admin());
 
+drop policy if exists weekly_periods_admin_update on public.weekly_periods;
 create policy weekly_periods_admin_update on public.weekly_periods
   for update to authenticated
   using (public.is_admin())
@@ -99,11 +105,13 @@ create policy weekly_periods_admin_update on public.weekly_periods
 -- ---------------------------------------------------------------------------
 
 -- Reviewers see everything, including the pending queue.
+drop policy if exists articles_select_reviewer on public.articles;
 create policy articles_select_reviewer on public.articles
   for select to authenticated
   using (public.is_reviewer());
 
 -- Content Creators see decided articles only — never the pending queue (§6).
+drop policy if exists articles_select_creator on public.articles;
 create policy articles_select_creator on public.articles
   for select to authenticated
   using (
@@ -114,11 +122,13 @@ create policy articles_select_creator on public.articles
 -- Only reviewers may approve, decline or edit editorial fields. There is no
 -- UPDATE policy for content_creator, so the database refuses the write no
 -- matter what the client sends.
+drop policy if exists articles_update_reviewer on public.articles;
 create policy articles_update_reviewer on public.articles
   for update to authenticated
   using (public.is_reviewer())
   with check (public.is_reviewer());
 
+drop policy if exists articles_delete_admin on public.articles;
 create policy articles_delete_admin on public.articles
   for delete to authenticated
   using (public.is_admin());
@@ -128,11 +138,13 @@ create policy articles_delete_admin on public.articles
 -- ---------------------------------------------------------------------------
 
 -- You can see your own requests; reviewers see all of them.
+drop policy if exists approval_requests_select on public.approval_requests;
 create policy approval_requests_select on public.approval_requests
   for select to authenticated
   using (requested_by = auth.uid() or public.is_reviewer());
 
 -- You may only file a request as yourself, and only against a declined article.
+drop policy if exists approval_requests_insert_self on public.approval_requests;
 create policy approval_requests_insert_self on public.approval_requests
   for insert to authenticated
   with check (
@@ -145,6 +157,7 @@ create policy approval_requests_insert_self on public.approval_requests
   );
 
 -- Only reviewers resolve requests.
+drop policy if exists approval_requests_resolve_reviewer on public.approval_requests;
 create policy approval_requests_resolve_reviewer on public.approval_requests
   for update to authenticated
   using (public.is_reviewer())

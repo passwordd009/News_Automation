@@ -226,6 +226,13 @@ article already approved or declined leaves the queue. Duplicates are never
 inserted twice: `normalized_url` is unique, and near-identical headlines are
 caught by a title fingerprint.
 
+**`User X exists but has no profile row` when running `seed_admin.sql`.** The
+signup trigger has not reached your project yet. Apply the migrations — in
+particular `20260914000001_attach_signup_trigger.sql`, which attaches it and
+backfills anyone who registered first — then re-run the seed. Every migration
+is safe to run more than once, so pasting one into the SQL editor is fine if
+the CLI is not set up.
+
 **Signed in, then immediately bounced out (repeated 307s).** Your account has
 no `profiles` row, so it has no role. The app now shows an explanation instead
 of redirecting, but if you are on an older checkout you will see a loop between

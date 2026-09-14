@@ -31,6 +31,7 @@ create table if not exists public.profiles (
 
 create index if not exists profiles_role_idx on public.profiles (role);
 
+drop trigger if exists profiles_touch_updated_at on public.profiles;
 create trigger profiles_touch_updated_at
   before update on public.profiles
   for each row execute function public.touch_updated_at();
@@ -159,6 +160,7 @@ create index if not exists articles_period_status_idx on public.articles (weekly
 create index if not exists articles_delete_after_idx
   on public.articles (delete_after) where delete_after is not null;
 
+drop trigger if exists articles_touch_updated_at on public.articles;
 create trigger articles_touch_updated_at
   before update on public.articles
   for each row execute function public.touch_updated_at();
@@ -186,6 +188,7 @@ begin
 end;
 $$;
 
+drop trigger if exists articles_stamp_decision on public.articles;
 create trigger articles_stamp_decision
   before update on public.articles
   for each row execute function public.stamp_article_decision();
@@ -227,6 +230,7 @@ begin
 end;
 $$;
 
+drop trigger if exists approval_requests_flag_article on public.approval_requests;
 create trigger approval_requests_flag_article
   after insert on public.approval_requests
   for each row execute function public.handle_approval_request();
@@ -247,6 +251,7 @@ begin
 end;
 $$;
 
+drop trigger if exists approval_requests_resolve on public.approval_requests;
 create trigger approval_requests_resolve
   before update on public.approval_requests
   for each row execute function public.handle_approval_resolution();

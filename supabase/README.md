@@ -45,6 +45,14 @@ and exercises each policy while acting as a genuine Postgres role with a real
 Needs the PostgreSQL 16 server binaries (`postgresql-16` on Debian/Ubuntu).
 Supabase itself is not required.
 
+## Migrations are idempotent
+
+Every migration can be run again safely: triggers and policies are dropped
+before being recreated, tables and indexes use `if not exists`. So applying
+them by pasting into the SQL editor works even if you are unsure what has
+already run, and a `db push` against a project whose migration history is out
+of sync will not fail halfway.
+
 ## Applying to your project
 
 ```bash
