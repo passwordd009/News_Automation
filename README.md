@@ -123,12 +123,16 @@ ring rather than a broken image.
 
 Open http://localhost:3000, create your account, then run `seed_admin.sql`.
 
-### Optional: run the worker from the dashboard
+### Collecting from the dashboard
 
-Set `ENABLE_LOCAL_INGEST=true` in `web/.env.local` to add a **Collect new
-articles** button to `/review`. It runs `worker/scripts/ingest.py` on the same
-machine, so it is a local-development convenience — leave it off anywhere the
-dashboard is hosted away from the worker.
+**Collect new articles** appears on the dashboard and on `/review` for anyone
+who can review. It runs the same worker as the command line, so no terminal is
+needed day to day — no configuration either, as long as the worker sits beside
+the dashboard, which it does in this repository.
+
+Set `ENABLE_LOCAL_INGEST=false` to hide it where the dashboard is hosted away
+from the worker and the button could only ever fail. Ollama still has to be
+running: the button reports exactly what is missing when it is not.
 
 ---
 
@@ -145,19 +149,30 @@ Reports on Supabase and the model separately, and says what to fix.
 ### Collect and screen articles
 
 ```bash
-python worker/scripts/ingest.py                 # the daily run
+python worker/scripts/ingest.py                 # the daily run (or use the button)
 python worker/scripts/ingest.py --limit 5       # try a few first
 python worker/scripts/ingest.py --dry-run       # screen, write nothing
+python worker/scripts/ingest.py --no-review     # collect without AI screening
 ```
 
 Everything lands as `pending`. The worker cannot approve — that invariant is
 enforced in code, and RLS enforces it for everyone else.
 
-### Review
+**The model is optional.** By default the worker screens articles when Ollama
+is reachable and collects without it when it is not, so the button always
+produces articles. Unscored ones say so in the queue rather than pretending to
+a score. The scheduled job uses `--review require` instead: it stops rather
+than filing a whole day unscored, which would bury the queue.
+
+### Review, then hand over
 
 Open `/review` in the dashboard. Reconsiderations come first, then the AI's
 recommendations, then by score. Low scorers sink to the bottom rather than
 being hidden: the decision is yours to make, not the model's.
+
+Approved stories appear on `/approved` — one vertical feed for the week, which
+is what content creators work from. The week stays there until Monday noon, so
+it is still the current week while the post goes out.
 
 ### Rotate the week
 
@@ -281,7 +296,7 @@ review queue is legitimately empty for them.
 | 4 | Worker writes to Supabase | ✅ |
 | 5 | Dashboard auth and role guards | ✅ |
 | 6 | `/review` queue | ✅ |
-| 7 | `/approved` weekly feed | ⬜ |
+| 7 | `/approved` weekly feed | ✅ |
 | 8 | `/archive` | ⬜ |
 | 9 | `/declined` + reconsideration | ⬜ |
 | 10 | Cleanup job for expired declined content | ⬜ |

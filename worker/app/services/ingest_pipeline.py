@@ -67,23 +67,43 @@ def run_ingest(
     feeds: Iterable[FeedConfig] | None = None,
     limit: int | None = None,
     dry_run: bool = False,
+    review: str = "auto",
 ) -> IngestStats:
-    """One full ingestion run."""
+    """One full ingestion run.
+
+    ``review`` decides what happens to the AI screening step:
+
+    ``never``   collect and file without touching the model. Articles arrive
+                with no scores, for a human to judge from the headline and the
+                feed's own summary.
+    ``require`` refuse to run if the model is unavailable. What the scheduled
+                job uses: quietly filing a whole day unscored would bury the
+                queue.
+    ``auto``    review when the model is there, collect without it when it is
+                not. The default, so a click still produces articles.
+    """
     settings = settings or get_settings()
     store = store or SupabaseStore(settings=settings)
     stats = IngestStats()
 
-    # Fail before collecting if the model is down. Ingesting a whole run's worth
-    # of unreviewed articles would bury the review queue in unscored noise.
-    if reviewer is None:
+    if review not in {"auto", "require", "never"}:
+        raise ValueError(f"review must be auto, require or never — got {review!r}")
+
+    if reviewer is None and review != "never":
         client = get_llm_client(settings)
-        if not client.is_available():
+        if client.is_available():
+            reviewer = ArticleReviewer(client=client, settings=settings)
+        elif review == "require":
             raise LLMError(
                 f"The {client.name} model is not reachable at {settings.ollama_url}.\n"
                 f"Start it with 'ollama serve' and 'ollama pull {settings.ollama_model}', "
                 "or check with: python worker/scripts/review_articles.py --check"
             )
-        reviewer = ArticleReviewer(client=client, settings=settings)
+        else:
+            logger.warning(
+                "The model is not reachable — collecting without AI screening. "
+                "Articles will arrive unscored for manual review."
+            )
 
     period = store.ensure_active_period()
     logger.info(
@@ -102,6 +122,11 @@ def run_ingest(
 
     rows = []
     for index, candidate in enumerate(candidates, start=1):
+        if reviewer is None:
+            # No screening: the article still reaches the queue, just unscored.
+            rows.append(article_row(candidate, None, period["id"]))
+            continue
+
         logger.info("Reviewing %d/%d: %s", index, len(candidates), candidate.title[:70])
         outcome = reviewer.review(candidate)
 

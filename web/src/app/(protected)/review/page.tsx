@@ -5,6 +5,7 @@ import { ReviewArticleCard } from "@/components/articles/ReviewArticleCard";
 import { formatPeriodRange } from "@/lib/format";
 import { redirect } from "next/navigation";
 import { RunIngestButton } from "@/components/articles/RunIngestButton";
+import { workerAvailable } from "@/lib/worker/localWorker";
 
 export const metadata = { title: "Review · Project Hestia" };
 
@@ -16,9 +17,9 @@ export default async function ReviewPage() {
 
   const { period, articles } = await getReviewQueue();
 
-  // Server-only flag: the button is hidden unless running the worker locally
-  // is enabled. The route enforces it regardless of what is rendered.
-  const canRunWorker = process.env.ENABLE_LOCAL_INGEST === "true";
+  // Offered whenever the worker is installed beside the dashboard. The route
+  // re-checks this and the caller's role regardless of what is rendered.
+  const canRunWorker = workerAvailable();
 
   const recommended = articles.filter((a) => a.ai_recommended).length;
 

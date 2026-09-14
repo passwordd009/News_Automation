@@ -353,29 +353,77 @@ def test_second_run_over_the_same_feed_inserts_nothing_new(monkeypatch):
     assert second.duplicate_url == 1
 
 
-def test_ingest_aborts_when_the_model_is_down(monkeypatch):
-    """Better to stop than bury the review queue in unscored articles."""
+class DeadClient(LLMClient):
+    """A model that cannot be reached."""
+
+    name = "ollama"
+
+    def generate(self, prompt, *, system=None):
+        raise AssertionError("should never be called")
+
+    def is_available(self):
+        return False
+
+
+def _dead_model(monkeypatch):
+    monkeypatch.setattr(
+        "app.services.ingest_pipeline.get_llm_client", lambda settings: DeadClient()
+    )
+
+
+def test_require_stops_rather_than_filing_a_day_unscored(monkeypatch):
+    """What the scheduled job uses: a silent unscored day would bury the queue."""
     _feeds(monkeypatch, [_candidate()])
-
-    class DeadClient(LLMClient):
-        name = "ollama"
-
-        def generate(self, prompt, *, system=None):
-            raise AssertionError("should never be called")
-
-        def is_available(self):
-            return False
-
-    monkeypatch.setattr("app.services.ingest_pipeline.get_llm_client", lambda settings: DeadClient())
+    _dead_model(monkeypatch)
     fake = FakeSupabase(periods=[ACTIVE_PERIOD])
     store = SupabaseStore(client=fake, settings=Settings())
 
     from app.llm.client import LLMError
 
     with pytest.raises(LLMError, match="not reachable"):
-        run_ingest(Settings(), store=store)
+        run_ingest(Settings(), store=store, review="require")
 
     assert fake.inserted == []
+
+
+def test_a_missing_model_still_collects_by_default(monkeypatch):
+    """The button has to produce articles even with no model running."""
+    _feeds(monkeypatch, [_candidate("A story", "https://example.com/1")])
+    _dead_model(monkeypatch)
+    fake = FakeSupabase(periods=[ACTIVE_PERIOD])
+    store = SupabaseStore(client=fake, settings=Settings())
+
+    stats = run_ingest(Settings(), store=store)  # review="auto"
+
+    assert stats.inserted == 1
+    assert stats.reviewed == 0
+    row = fake.inserted[0]
+    assert row["status"] == "pending"
+    # Nothing is invented for an article the model never saw.
+    assert "overall_score" not in row
+    assert row["ai_recommended"] is False
+
+
+def test_review_never_does_not_touch_the_model(monkeypatch):
+    _feeds(monkeypatch, [_candidate()])
+
+    def explode(settings):
+        raise AssertionError("the model must not be consulted")
+
+    monkeypatch.setattr("app.services.ingest_pipeline.get_llm_client", explode)
+    fake = FakeSupabase(periods=[ACTIVE_PERIOD])
+    store = SupabaseStore(client=fake, settings=Settings())
+
+    stats = run_ingest(Settings(), store=store, review="never")
+
+    assert stats.inserted == 1
+    assert fake.inserted[0]["status"] == "pending"
+
+
+def test_an_unknown_review_mode_is_rejected():
+    store = SupabaseStore(client=FakeSupabase(periods=[ACTIVE_PERIOD]), settings=Settings())
+    with pytest.raises(ValueError, match="auto, require or never"):
+        run_ingest(Settings(), store=store, review="maybe")
 
 
 def test_missing_credentials_give_an_actionable_error():
