@@ -117,7 +117,18 @@ the same API settings page. (Older projects call that key `anon`; either
 variable name works.) These are public by design — the publishable key can only
 do what RLS permits the signed-in user to do.
 
+Save the Hestia mark as `web/public/hestia-logo.png` — a square PNG with a
+transparent background. Until it is there the app falls back to a plain drawn
+ring rather than a broken image.
+
 Open http://localhost:3000, create your account, then run `seed_admin.sql`.
+
+### Optional: run the worker from the dashboard
+
+Set `ENABLE_LOCAL_INGEST=true` in `web/.env.local` to add a **Collect new
+articles** button to `/review`. It runs `worker/scripts/ingest.py` on the same
+machine, so it is a local-development convenience — leave it off anywhere the
+dashboard is hosted away from the worker.
 
 ---
 
@@ -183,6 +194,9 @@ retry or misfire cannot cut a week short.
 | Manage roles and weeks | ✅ | — | — |
 
 Everyone starts as a Content Creator. An admin promotes them.
+
+The interface offers light, dark and auto. Auto follows the system setting;
+an explicit choice is remembered per browser and syncs across open tabs.
 
 Authorization exists at three layers, and only one of them is security:
 navigation hides what you cannot use, the server refuses the route, and

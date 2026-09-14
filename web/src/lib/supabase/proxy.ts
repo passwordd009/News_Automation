@@ -48,8 +48,19 @@ export async function updateSession(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
   const isPublic = pathname === "/login" || pathname.startsWith("/auth");
+  const isApi = pathname.startsWith("/api/");
 
   if (!user && !isPublic) {
+    // Redirecting an API call to an HTML login page gives fetch() a 307 and
+    // then a page of HTML, so the caller fails on JSON.parse and reports
+    // something unrelated. Answer machines with a status code.
+    if (isApi) {
+      return NextResponse.json(
+        { error: "You are not signed in." },
+        { status: 401 },
+      );
+    }
+
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/login";
     // Come back here once they have signed in.

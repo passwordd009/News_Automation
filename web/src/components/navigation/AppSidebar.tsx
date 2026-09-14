@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { can, ROLE_LABELS, type Capability, type Role } from "@/lib/auth/permissions";
+import { HestiaLogo } from "@/components/brand/HestiaLogo";
+import { ThemeToggle } from "@/components/theme/ThemeToggle";
 
 interface NavItem {
   href: string;
@@ -36,10 +38,12 @@ export function AppSidebar({
       aria-label="Main"
       className="flex shrink-0 flex-col gap-1 border-b border-border bg-surface px-4 py-4 sm:w-56 sm:border-r sm:border-b-0 sm:px-3 sm:py-6"
     >
-      <div className="mb-4 px-2">
-        <div className="mb-2 h-1 w-8 bg-accent" />
-        <p className="text-sm font-semibold leading-tight">Project Hestia</p>
-        <p className="text-xs text-muted">Weekly Wrap-Up</p>
+      <div className="mb-4 flex items-center gap-3 px-2">
+        <HestiaLogo size={36} />
+        <div>
+          <p className="text-sm font-semibold leading-tight">Project Hestia</p>
+          <p className="text-xs text-muted">Weekly Wrap-Up</p>
+        </div>
       </div>
 
       <ul className="flex flex-wrap gap-1 sm:flex-col">
@@ -70,6 +74,9 @@ export function AppSidebar({
           {email}
         </p>
         <p className="mt-0.5 text-xs font-medium text-accent">{ROLE_LABELS[role]}</p>
+        <div className="mt-3">
+          <ThemeToggle />
+        </div>
         <form action="/auth/signout" method="post">
           <button
             type="submit"
