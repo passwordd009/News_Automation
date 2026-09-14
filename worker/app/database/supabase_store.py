@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Iterable, Sequence
 
-from app.config import Settings, get_settings
+from app.config import PROJECT_ROOT, Settings, env_file_status, get_settings
 from app.llm.article_reviewer import ReviewOutcome
 from app.processing.deduplicator import title_fingerprint
 from app.schemas import ArticleCandidate
@@ -65,11 +65,28 @@ def build_client(settings: Settings | None = None):
     settings = settings or get_settings()
 
     if not settings.supabase_url or not settings.supabase_service_role_key:
+        missing = [
+            name
+            for name, value in (
+                ("SUPABASE_URL", settings.supabase_url),
+                ("SUPABASE_SECRET_KEY", settings.supabase_service_role_key),
+            )
+            if not value
+        ]
+        env_path = PROJECT_ROOT / ".env"
         raise SupabaseError(
-            "SUPABASE_URL and SUPABASE_SECRET_KEY must be set in worker/.env.\n"
-            "Find them under Project Settings -> API in the Supabase dashboard.\n"
-            "(Older projects call it SUPABASE_SERVICE_ROLE_KEY; either name works.)\n"
-            "This key bypasses RLS — keep it out of the frontend and out of git."
+            f"{' and '.join(missing)} not set.\n"
+            f"{env_file_status()}\n"
+            "\n"
+            f"Create {env_path} containing:\n"
+            "\n"
+            "    SUPABASE_URL=https://YOUR-PROJECT.supabase.co\n"
+            "    SUPABASE_SECRET_KEY=sb_secret_...\n"
+            "\n"
+            "Both are under Project Settings -> API in the Supabase dashboard. The\n"
+            "secret key is the one labelled 'secret' (older projects call it\n"
+            "'service_role'), NOT the publishable key the dashboard uses — it\n"
+            "bypasses RLS, so keep it out of web/ and out of git."
         )
 
     try:
