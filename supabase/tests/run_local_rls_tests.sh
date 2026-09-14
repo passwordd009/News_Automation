@@ -70,10 +70,11 @@ for migration in "$MIGRATIONS"/*.sql; do
   psql -q -f "$migration"
 done
 
-# The signup trigger belongs to Supabase's auth.users; wire it up locally so
-# inserting a user creates a profile exactly as it will in production.
-psql -q -c "create trigger on_auth_user_created after insert on auth.users
-            for each row execute function public.handle_new_user();"
+# NOTE: the signup trigger is deliberately NOT created here. It is created by
+# a migration. An earlier version of this script created it itself, which meant
+# the suite passed while production had no trigger at all and every signup
+# produced a roleless account. A harness must never supply what the migrations
+# are supposed to provide.
 
 echo "Running policy tests..."
 psql -q -f "$HERE/rls_test.sql"

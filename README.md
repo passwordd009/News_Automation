@@ -81,10 +81,10 @@ pip install -r worker/requirements.txt
 cp worker/.env.example worker/.env           # then fill it in
 ```
 
-Fill in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` from **Project Settings
-→ API**.
+Fill in `SUPABASE_URL` and `SUPABASE_SECRET_KEY` from **Project Settings →
+API**. (Older projects call it `service_role`; either variable name works.)
 
-> The service-role key **bypasses Row Level Security entirely**. It belongs in
+> The secret key **bypasses Row Level Security entirely**. It belongs in
 > `worker/.env` and nowhere else — never in `web/`, never committed.
 
 ### 3. The model
@@ -107,8 +107,9 @@ cp .env.example .env.local                   # then fill it in
 npm run dev
 ```
 
-`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` come from the
-same API settings page. These two are public by design — the anon key can only
+`NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` come from
+the same API settings page. (Older projects call that key `anon`; either
+variable name works.) These are public by design — the publishable key can only
 do what RLS permits the signed-in user to do.
 
 Open http://localhost:3000, create your account, then run `seed_admin.sql`.
@@ -220,10 +221,17 @@ article already approved or declined leaves the queue. Duplicates are never
 inserted twice: `normalized_url` is unique, and near-identical headlines are
 caught by a title fingerprint.
 
-**Signed in but every page bounces to login.** Your account probably has no
-`profiles` row. A missing profile is treated as unauthenticated rather than
-defaulted to a role. Check that the signup trigger exists and re-run
-`seed_admin.sql`.
+**Signed in, then immediately bounced out (repeated 307s).** Your account has
+no `profiles` row, so it has no role. The app now shows an explanation instead
+of redirecting, but if you are on an older checkout you will see a loop between
+`/login` and `/dashboard`. Fix it with `supabase db push` — the migration
+attaches the signup trigger and backfills anyone who registered before it
+existed. Then sign out and back in.
+
+**"Supabase is not configured" on startup.** Supabase renamed its API keys:
+`anon` is now `publishable`, and `service_role` is now `secret`. Both names are
+accepted, but `NEXT_PUBLIC_` variables are read **at build time** — restart the
+dev server after editing `.env.local`.
 
 **The dashboard shows nothing where you expect rows.** That is usually RLS
 doing its job. A Content Creator cannot see pending articles at all, so the

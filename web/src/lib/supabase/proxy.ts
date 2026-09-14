@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { getSupabaseEnv } from "@/lib/supabase/env";
 
 /**
  * Refreshes the auth session on every request and bounces signed-out users.
@@ -17,9 +18,10 @@ export async function updateSession(request: NextRequest) {
 
   let response = NextResponse.next({ request: { headers: requestHeaders } });
 
+  const env = getSupabaseEnv();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    env.url,
+    env.key,
     {
       cookies: {
         getAll() {

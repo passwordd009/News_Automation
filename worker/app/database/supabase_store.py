@@ -66,9 +66,10 @@ def build_client(settings: Settings | None = None):
 
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise SupabaseError(
-            "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in worker/.env.\n"
+            "SUPABASE_URL and SUPABASE_SECRET_KEY must be set in worker/.env.\n"
             "Find them under Project Settings -> API in the Supabase dashboard.\n"
-            "The service-role key bypasses RLS — keep it out of the frontend and out of git."
+            "(Older projects call it SUPABASE_SERVICE_ROLE_KEY; either name works.)\n"
+            "This key bypasses RLS — keep it out of the frontend and out of git."
         )
 
     try:
