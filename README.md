@@ -152,16 +152,27 @@ Reports on Supabase and the model separately, and says what to fix.
 python worker/scripts/ingest.py                 # the daily run (or use the button)
 python worker/scripts/ingest.py --limit 5       # try a few first
 python worker/scripts/ingest.py --dry-run       # screen, write nothing
+python worker/scripts/ingest.py --no-review     # collect without AI screening
 ```
 
 Everything lands as `pending`. The worker cannot approve — that invariant is
 enforced in code, and RLS enforces it for everyone else.
 
-### Review
+**The model is optional.** By default the worker screens articles when Ollama
+is reachable and collects without it when it is not, so the button always
+produces articles. Unscored ones say so in the queue rather than pretending to
+a score. The scheduled job uses `--review require` instead: it stops rather
+than filing a whole day unscored, which would bury the queue.
+
+### Review, then hand over
 
 Open `/review` in the dashboard. Reconsiderations come first, then the AI's
 recommendations, then by score. Low scorers sink to the bottom rather than
 being hidden: the decision is yours to make, not the model's.
+
+Approved stories appear on `/approved` — one vertical feed for the week, which
+is what content creators work from. The week stays there until Monday noon, so
+it is still the current week while the post goes out.
 
 ### Rotate the week
 
@@ -285,7 +296,7 @@ review queue is legitimately empty for them.
 | 4 | Worker writes to Supabase | ✅ |
 | 5 | Dashboard auth and role guards | ✅ |
 | 6 | `/review` queue | ✅ |
-| 7 | `/approved` weekly feed | ⬜ |
+| 7 | `/approved` weekly feed | ✅ |
 | 8 | `/archive` | ⬜ |
 | 9 | `/declined` + reconsideration | ⬜ |
 | 10 | Cleanup job for expired declined content | ⬜ |

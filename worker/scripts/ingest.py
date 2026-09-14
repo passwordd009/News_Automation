@@ -30,6 +30,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None, help="Review at most N new articles.")
     parser.add_argument("--dry-run", action="store_true", help="Review but write nothing to Supabase.")
     parser.add_argument("--check", action="store_true", help="Verify Supabase and the model, then exit.")
+    parser.add_argument(
+        "--review",
+        choices=["auto", "require", "never"],
+        default="auto",
+        help=(
+            "auto (default): screen when the model is reachable, collect without it when not. "
+            "require: refuse to run without the model. never: skip screening entirely."
+        ),
+    )
+    parser.add_argument(
+        "--no-review",
+        action="store_const",
+        const="never",
+        dest="review",
+        help="Collect without AI screening. Same as --review never.",
+    )
     parser.add_argument("--log-level", default=None, help="DEBUG, INFO, WARNING, ERROR.")
     return parser.parse_args()
 
@@ -104,13 +120,21 @@ def main() -> int:
         return check(settings)
 
     try:
-        stats = run_ingest(settings, limit=args.limit, dry_run=args.dry_run)
+        stats = run_ingest(
+            settings, limit=args.limit, dry_run=args.dry_run, review=args.review
+        )
     except (SupabaseError, LLMError) as exc:
         print(f"\n✗ {exc}\n", file=sys.stderr)
         print("Run with --check to test both connections.", file=sys.stderr)
         return 1
 
     print(f"\n{stats.format_summary()}")
+
+    if stats.inserted and not stats.reviewed and args.review != "require":
+        print(
+            "\nCollected without AI screening, so nothing is scored — "
+            "every article is waiting on your judgement."
+        )
 
     if args.dry_run:
         print("\nDry run — nothing was written.")

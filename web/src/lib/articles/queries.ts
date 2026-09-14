@@ -56,3 +56,50 @@ export async function getReviewQueue(): Promise<ReviewQueue> {
 
   return { period, articles: data ?? [] };
 }
+
+export interface ApprovedWeek {
+  period: WeeklyPeriod | null;
+  articles: Article[];
+}
+
+/**
+ * The approved articles for one editorial week.
+ *
+ * Defaults to the active period — which, because a week stays active until
+ * Monday at noon, is the week being posted right up to the moment it goes out.
+ * Pass a period id for an archived week; the page renders both the same way.
+ */
+export async function getApprovedWeek(periodId?: string): Promise<ApprovedWeek> {
+  const supabase = await createClient();
+
+  const period = periodId
+    ? await getPeriod(periodId)
+    : await getActivePeriod();
+
+  if (!period) return { period: null, articles: [] };
+
+  const { data, error } = await supabase
+    .from("articles")
+    .select("*")
+    .eq("weekly_period_id", period.id)
+    .eq("status", "approved")
+    .order("approved_at", { ascending: true })
+    .returns<Article[]>();
+
+  if (error) {
+    console.error("Could not load approved articles:", error.message);
+    return { period, articles: [] };
+  }
+
+  return { period, articles: data ?? [] };
+}
+
+export async function getPeriod(periodId: string): Promise<WeeklyPeriod | null> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("weekly_periods")
+    .select("*")
+    .eq("id", periodId)
+    .maybeSingle<WeeklyPeriod>();
+  return data ?? null;
+}

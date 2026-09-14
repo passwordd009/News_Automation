@@ -14,10 +14,13 @@ export function ArticleScores({ article }: { article: Article }) {
   const hasScores = DIMENSIONS.some((d) => article[d.key] !== null);
 
   if (!hasScores) {
+    // Two different situations: the model was never asked (collected without
+    // screening), or it was asked and failed. Only the second has a reason.
     return (
       <p className="text-sm text-muted">
-        Not scored.{" "}
-        {article.ai_rejection_reason ?? "The AI could not review this article."}
+        {article.ai_rejection_reason
+          ? `Not scored — ${article.ai_rejection_reason}`
+          : "Not screened by AI. Judge it from the headline and summary."}
       </p>
     );
   }

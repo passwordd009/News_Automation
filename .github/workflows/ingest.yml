@@ -72,6 +72,8 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         run: python worker/scripts/ingest.py --check
 
+      # --review require: the scheduled job stops rather than filing a whole
+      # day unscored, which would bury the queue. The button degrades instead.
       - name: Collect and screen
         if: steps.gate.outputs.run == 'true'
         # The input goes through the environment rather than being interpolated
@@ -81,9 +83,9 @@ jobs:
           LIMIT: ${{ inputs.limit }}
         run: |
           if [ -z "$LIMIT" ]; then
-            python worker/scripts/ingest.py
+            python worker/scripts/ingest.py --review require
           elif printf '%s' "$LIMIT" | grep -Eq '^[0-9]+$'; then
-            python worker/scripts/ingest.py --limit "$LIMIT"
+            python worker/scripts/ingest.py --review require --limit "$LIMIT"
           else
             echo "limit must be a whole number, got: $LIMIT" >&2
             exit 1
