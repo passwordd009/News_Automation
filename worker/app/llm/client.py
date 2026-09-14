@@ -47,6 +47,20 @@ class OllamaClient(LLMClient):
         self.model = settings.ollama_model
         self.timeout = settings.llm_timeout
         self.temperature = settings.llm_temperature
+        self.auth_token = settings.ollama_auth_token
+
+    @property
+    def _headers(self) -> dict[str, str]:
+        """Ollama has no authentication of its own.
+
+        A self-hosted instance the worker reaches over the internet must sit
+        behind a proxy that requires this token, or anyone who finds the port
+        can use the model. Empty when talking to localhost, where there is
+        nothing to protect against.
+        """
+        if not self.auth_token:
+            return {}
+        return {"Authorization": f"Bearer {self.auth_token}"}
 
     def generate(self, prompt: str, *, system: str | None = None) -> str:
         payload: dict = {
@@ -66,6 +80,7 @@ class OllamaClient(LLMClient):
                 f"{self.base_url}/api/generate",
                 json=payload,
                 timeout=self.timeout,
+                headers=self._headers,
             )
             response.raise_for_status()
         except requests.RequestException as exc:
@@ -84,7 +99,14 @@ class OllamaClient(LLMClient):
     def is_available(self) -> bool:
         """Check the daemon is up and the configured model is pulled."""
         try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            response = requests.get(f"{self.base_url}/api/tags", timeout=10, headers=self._headers)
+            if response.status_code in (401, 403):
+                logger.warning(
+                    "Ollama at %s rejected the credentials. Check OLLAMA_AUTH_TOKEN "
+                    "matches what the proxy expects.",
+                    self.base_url,
+                )
+                return False
             response.raise_for_status()
             models = {m.get("name", "") for m in response.json().get("models", [])}
         except (requests.RequestException, json.JSONDecodeError, AttributeError) as exc:

@@ -1,0 +1,43 @@
+name: Rotate the editorial week
+
+# Closes the week just posted and opens the next, Monday at noon.
+#
+# Hestia posts Monday morning covering the week that ended, so the period stays
+# active until the post has gone out. The script re-checks the schedule itself
+# and does nothing if rotation is not actually due, so an extra trigger is
+# harmless.
+on:
+  schedule:
+    - cron: "0 16 * * 1"   # 12:00 EDT
+    - cron: "0 17 * * 1"   # 12:00 EST
+  workflow_dispatch:
+
+concurrency:
+  group: hestia-rotate
+  cancel-in-progress: false
+
+jobs:
+  rotate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: worker/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r worker/requirements.txt
+
+      # Both cron lines fire year-round; rotate_week.py only acts when the week
+      # has actually ended and it is Monday at or after noon locally.
+      - name: Rotate if due
+        run: python worker/scripts/rotate_week.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TIMEZONE: ${{ vars.TIMEZONE || 'America/New_York' }}

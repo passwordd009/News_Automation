@@ -34,6 +34,29 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _model_hint(settings) -> str:
+    """Advice that matches where the model actually is.
+
+    Telling someone to run `ollama serve` is useless when the URL points at a
+    server they are not sitting in front of.
+    """
+    local = any(host in settings.ollama_url for host in ("localhost", "127.0.0.1", "::1"))
+
+    if local:
+        return f"Try: ollama serve  &&  ollama pull {settings.ollama_model}"
+
+    hint = (
+        f"Check the host is up and serving {settings.ollama_model}, "
+        "and that OLLAMA_URL is reachable from here."
+    )
+    if not settings.ollama_auth_token:
+        hint += (
+            "\n    OLLAMA_AUTH_TOKEN is not set — if the host is behind an "
+            "authenticating proxy, requests will be rejected."
+        )
+    return hint
+
+
 def check(settings) -> int:
     """Confirm both external dependencies before a real run."""
     ok = True
@@ -58,10 +81,11 @@ def check(settings) -> int:
     try:
         client = get_llm_client(settings)
         print(f"  Provider: {client.name}   Model: {settings.ollama_model}")
+        print(f"  URL: {settings.ollama_url}")
         if client.is_available():
             print("  ✓ Reachable and pulled.")
         else:
-            print(f"  ✗ Not ready. Try: ollama serve  &&  ollama pull {settings.ollama_model}")
+            print(f"  ✗ Not ready. {_model_hint(settings)}")
             ok = False
     except LLMError as exc:
         print(f"  ✗ {exc}")

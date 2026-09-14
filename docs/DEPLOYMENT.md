@@ -4,7 +4,9 @@ Everything built so far assumes one machine: the dashboard, the Python worker
 and Ollama all sit together on your laptop. Deploying splits them apart, and
 three things stop working the moment it does.
 
-This is the plan for each. Nothing here is implemented yet.
+The plan for each, and what is already done: Ollama now accepts a bearer token
+so a networked instance is not left open, and the scheduled workflows exist.
+Standing up the VM and moving the button are still ahead.
 
 ---
 
@@ -26,17 +28,12 @@ interface with one implementation; a hosted provider is a new class plus a line
 in `_PROVIDERS`, and `LLM_PROVIDER` switches between them. No other module
 changes — the reviewer, the pipeline and the prompts all stay as they are.
 
-Two ways out:
+**Decision: self-hosted Ollama on a VM**, keeping the current model and prompts
+and avoiding a per-article cost. The trade is that you maintain the box, and
+CPU-only inference is slow — see Sizing below.
 
-| | What it means | Trade-off |
-|---|---|---|
-| **Hosted API** | Claude, OpenAI or Gemini behind the same interface | Costs money per article; reliable, no infrastructure |
-| **Self-hosted Ollama** | Run it on a VM the worker can reach | No per-article cost; you maintain a box, and CPU-only inference is slow |
-
-At roughly 50 articles a day the token volume is small — each review is one
-article's text in, a short JSON object out. A hosted small/fast model is likely
-cheaper than a VM, but check current pricing rather than trusting an estimate
-here.
+A hosted API remains a one-class change if that trade stops being worth it:
+`LLMClient` is an interface, and `LLM_PROVIDER` selects the implementation.
 
 ### 2. Nothing runs the worker
 
@@ -86,17 +83,109 @@ Better feedback, but a service to keep alive and pay for.
 
 ---
 
+## Securing the Ollama VM
+
+**Your repository is public**, which rules out the neatest arrangement: a
+self-hosted Actions runner on the same VM as Ollama, with the model bound to
+localhost. On a public repo anyone can open a pull request, and a self-hosted
+runner would execute it on your machine.
+
+So GitHub's hosted runners have to reach the VM over the internet — and
+**Ollama has no authentication of its own**. An open port 11434 lets anyone who
+finds it use your model, pull models onto your disk, and read what you send.
+Scanners find these quickly.
+
+Put a proxy in front of it and make the worker prove itself. The worker sends
+`Authorization: Bearer $OLLAMA_AUTH_TOKEN` when that variable is set (and
+nothing when it is not, so localhost is unaffected).
+
+A Caddyfile is about the smallest thing that works:
+
+```caddy
+ollama.example.com {
+	@unauthorized not header Authorization "Bearer YOUR_LONG_RANDOM_TOKEN"
+	respond @unauthorized 401
+
+	reverse_proxy 127.0.0.1:11434
+}
+```
+
+Then bind Ollama to localhost only, so the proxy is the sole way in:
+
+```bash
+# /etc/systemd/system/ollama.service.d/override.conf
+[Service]
+Environment="OLLAMA_HOST=127.0.0.1:11434"
+```
+
+And close the port at the firewall — 80 and 443 for Caddy, nothing else:
+
+```bash
+ufw allow 80,443/tcp && ufw deny 11434/tcp && ufw enable
+```
+
+Generate the token with `openssl rand -hex 32` and put it in both the Caddyfile
+and the `OLLAMA_AUTH_TOKEN` secret. Confirm it works from somewhere else:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://ollama.example.com/api/tags              # expect 401
+curl -s -H "Authorization: Bearer TOKEN" https://ollama.example.com/api/tags | head -c 80  # expect JSON
+```
+
+**Tailscale is the stronger option** if you would rather the VM never appear on
+the public internet at all: the runner joins your tailnet with
+`tailscale/github-action`, and `OLLAMA_URL` becomes the machine's tailnet
+address. More moving parts, no exposed surface.
+
+### Sizing
+
+Screening one article is a small prompt in and a short JSON object out, but on
+CPU-only hardware a 8B model still takes tens of seconds. At 50 articles a day
+that is a run measured in tens of minutes — fine for a 06:00 cron, slow for a
+button press. The ingest workflow allows 45 minutes and sets `LLM_TIMEOUT=300`
+for that reason. A smaller model, or a GPU instance, is the lever if runs start
+timing out.
+
 ## Steps
 
 | # | Step | Depends on |
 |---|---|---|
-| 1 | Add a hosted LLM client behind `LLMClient`, selected by `LLM_PROVIDER` | choosing a provider |
-| 2 | GitHub Actions: daily ingest, Monday-noon rotation | step 1 |
-| 3 | `workflow_dispatch` so the button triggers the remote run | step 2 |
-| 4 | Deploy the dashboard to Vercel | — |
-| 5 | Harden: rotate keys, confirm RLS in production, Supabase auth settings | — |
+| 1 | ~~Token auth for a networked Ollama~~ | ✅ done |
+| 2 | ~~GitHub Actions: daily ingest, Monday-noon rotation~~ | ✅ done |
+| 3 | Stand up the VM: Ollama on localhost, Caddy with the token, firewall | you |
+| 4 | Add the secrets below, then run each workflow manually once | step 3 |
+| 5 | Point the button at `workflow_dispatch` instead of a local process | step 4 |
+| 6 | Deploy the dashboard to Vercel | — |
+| 7 | Harden: rotate keys, confirm RLS in production, Supabase auth settings | — |
 
-Steps 4 and 5 are independent of the rest and can go first.
+Steps 6 and 7 are independent and can go first.
+
+### Secrets and variables
+
+In **Settings → Secrets and variables → Actions**:
+
+| Secret | |
+|---|---|
+| `SUPABASE_URL` | your project URL |
+| `SUPABASE_SECRET_KEY` | the secret (service-role) key — never in Vercel |
+| `OLLAMA_URL` | `https://ollama.example.com` |
+| `OLLAMA_AUTH_TOKEN` | the token from the Caddyfile |
+
+| Variable | Default if unset |
+|---|---|
+| `OLLAMA_MODEL` | `llama3.1` |
+| `TIMEZONE` | `America/New_York` |
+
+Both workflows have `workflow_dispatch`, so run each once by hand from the
+Actions tab before trusting the schedule. `ingest.py --check` runs first and
+reports Supabase and the model separately.
+
+### About the two cron lines
+
+GitHub cron is UTC and ignores daylight saving, so a single expression drifts
+an hour twice a year. Each workflow is scheduled at both offsets and decides
+whether to act: ingest checks the local hour, and `rotate_week.py` already
+refuses unless it is Monday at or after noon **and** the week has ended.
 
 ### Step 5 in detail — before real data
 

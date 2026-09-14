@@ -112,6 +112,9 @@ class Settings:
     llm_provider: str = "ollama"
     ollama_url: str = "http://localhost:11434"
     ollama_model: str = "llama3.1"
+    # Only needed when Ollama is reachable over a network: it has no auth of
+    # its own, so a hosted instance sits behind a proxy that requires this.
+    ollama_auth_token: str = ""
     llm_timeout: int = 120
     llm_temperature: float = 0.2
     llm_max_attempts: int = 2
@@ -229,6 +232,7 @@ def get_settings() -> Settings:
         llm_provider=_env_str("LLM_PROVIDER", "ollama"),
         ollama_url=_env_str("OLLAMA_URL", "http://localhost:11434"),
         ollama_model=_env_str("OLLAMA_MODEL", "llama3.1"),
+        ollama_auth_token=_env_str("OLLAMA_AUTH_TOKEN", ""),
         llm_timeout=_env_int("LLM_TIMEOUT", 120),
         llm_temperature=_env_float("LLM_TEMPERATURE", 0.2),
         llm_max_attempts=_env_int("LLM_MAX_ATTEMPTS", 2),
