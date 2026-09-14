@@ -4,6 +4,7 @@ import { getReviewQueue } from "@/lib/articles/queries";
 import { ReviewArticleCard } from "@/components/articles/ReviewArticleCard";
 import { formatPeriodRange } from "@/lib/format";
 import { redirect } from "next/navigation";
+import { RunIngestButton } from "@/components/articles/RunIngestButton";
 
 export const metadata = { title: "Review · Project Hestia" };
 
@@ -14,6 +15,10 @@ export default async function ReviewPage() {
   if (!can(profile.role, "viewPendingQueue")) redirect("/dashboard?denied=1");
 
   const { period, articles } = await getReviewQueue();
+
+  // Server-only flag: the button is hidden unless running the worker locally
+  // is enabled. The route enforces it regardless of what is rendered.
+  const canRunWorker = process.env.ENABLE_LOCAL_INGEST === "true";
 
   const recommended = articles.filter((a) => a.ai_recommended).length;
 
@@ -35,15 +40,25 @@ export default async function ReviewPage() {
         </p>
       </header>
 
+      {canRunWorker && (
+        <div className="mt-6 rounded-lg border border-border bg-surface px-5 py-4">
+          <RunIngestButton />
+        </div>
+      )}
+
       {articles.length === 0 ? (
         <div className="mt-8 rounded-lg border border-dashed border-border px-6 py-12 text-center">
           <p className="text-sm font-medium">The queue is empty.</p>
           <p className="mt-2 text-sm text-muted">
-            Run the worker to collect and screen new articles:
+            {canRunWorker
+              ? "Use the button above to collect and screen new articles."
+              : "Run the worker to collect and screen new articles:"}
           </p>
-          <code className="mt-3 inline-block rounded bg-background px-3 py-1.5 text-xs">
-            python worker/scripts/ingest.py
-          </code>
+          {!canRunWorker && (
+            <code className="mt-3 inline-block rounded bg-background px-3 py-1.5 text-xs">
+              python worker/scripts/ingest.py
+            </code>
+          )}
         </div>
       ) : (
         <>

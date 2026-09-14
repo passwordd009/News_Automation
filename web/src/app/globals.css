@@ -6,8 +6,12 @@
  * Orange is the accent and outline colour (§15), not a background wash: rules,
  * borders, active navigation, focus rings and the weekly-period emphasis. The
  * page itself stays neutral so article text carries the weight.
+ *
+ * Three theme states: an explicit choice sets data-theme on <html>, and the
+ * default "system" setting leaves it unset so prefers-color-scheme decides.
  */
 
+/* Light — the default, and what the palette is designed around. */
 :root {
   --background: #fcfbf9;
   --surface: #ffffff;
@@ -15,7 +19,6 @@
   --muted: #78716c;
   --border: #e7e5e4;
 
-  /* The Hestia accent. */
   --accent: #ea580c;
   --accent-strong: #c2410c;
   --accent-soft: #fff4ed;
@@ -23,10 +26,16 @@
 
   --positive: #15803d;
   --negative: #b91c1c;
+
+  /* The logo is black line art, so it needs inverting on a dark ground. */
+  --logo-filter: none;
+
+  color-scheme: light;
 }
 
+/* System preference, unless the viewer has explicitly chosen light. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --background: #0c0a09;
     --surface: #1c1917;
     --foreground: #f5f5f4;
@@ -40,7 +49,32 @@
 
     --positive: #4ade80;
     --negative: #f87171;
+
+    --logo-filter: invert(1);
+
+    color-scheme: dark;
   }
+}
+
+/* An explicit dark choice wins in both directions. */
+:root[data-theme="dark"] {
+  --background: #0c0a09;
+  --surface: #1c1917;
+  --foreground: #f5f5f4;
+  --muted: #a8a29e;
+  --border: #292524;
+
+  --accent: #fb923c;
+  --accent-strong: #fdba74;
+  --accent-soft: #2a1608;
+  --accent-border: #7c2d12;
+
+  --positive: #4ade80;
+  --negative: #f87171;
+
+  --logo-filter: invert(1);
+
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -70,4 +104,9 @@ body {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   border-radius: 2px;
+}
+
+/* Black-on-transparent artwork stays legible on a dark ground. */
+.logo-mark {
+  filter: var(--logo-filter);
 }
