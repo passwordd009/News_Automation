@@ -1,6 +1,7 @@
 "use client";
 
 import { createBrowserClient } from "@supabase/ssr";
+import { getSupabaseEnv } from "@/lib/supabase/env";
 
 /**
  * Supabase for the browser, using the anon key.
@@ -10,8 +11,9 @@ import { createBrowserClient } from "@supabase/ssr";
  * bypasses RLS, and anything in the browser bundle is public.
  */
 export function createClient() {
+  const env = getSupabaseEnv();
   return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    env.url,
+    env.key,
   );
 }

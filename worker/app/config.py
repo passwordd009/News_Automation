@@ -210,7 +210,10 @@ def get_settings() -> Settings:
     feeds_file = os.getenv("RSS_FEEDS_FILE", "").strip()
     return Settings(
         supabase_url=_env_str("SUPABASE_URL", ""),
-        supabase_service_role_key=_env_str("SUPABASE_SERVICE_ROLE_KEY", ""),
+        # Supabase renamed service_role -> secret. Accept either, since new
+        # projects show the new name and older ones still show the old.
+        supabase_service_role_key=_env_str("SUPABASE_SECRET_KEY", "")
+        or _env_str("SUPABASE_SERVICE_ROLE_KEY", ""),
         database_url=_absolute_sqlite_url(_env_str("DATABASE_URL", "sqlite:///hestia_news.db")),
         enable_rss=_env_bool("ENABLE_RSS", True),
         enable_gmail=_env_bool("ENABLE_GMAIL", False),

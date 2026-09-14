@@ -270,6 +270,34 @@ $$;
 rollback;
 
 \echo ''
+\echo '=== Signup ==='
+
+do $$
+declare n int; new_role text;
+begin
+  -- Regression: the trigger was defined but never attached, so signing up
+  -- produced an auth user with no profile and therefore no role. The account
+  -- could authenticate but not use the app.
+  insert into auth.users (id, email)
+  values ('a0000000-0000-0000-0000-000000000009', 'newcomer@hestia.test');
+
+  select count(*) into n from public.profiles
+   where id = 'a0000000-0000-0000-0000-000000000009';
+  perform public.assert(n = 1, 'signing up creates a profile row');
+
+  select role into new_role from public.profiles
+   where id = 'a0000000-0000-0000-0000-000000000009';
+  perform public.assert(new_role = 'content_creator', 'new accounts start as content_creator');
+
+  select count(*) into n
+    from auth.users u
+    left join public.profiles p on p.id = u.id
+   where p.id is null;
+  perform public.assert(n = 0, 'no auth user is left without a profile');
+end;
+$$;
+
+\echo ''
 \echo '=== Schema invariants ==='
 
 do $$

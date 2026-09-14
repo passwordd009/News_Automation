@@ -11,51 +11,78 @@ export interface CurrentUser {
 }
 
 /**
- * The signed-in user and their role, read from the database.
+ * Three distinct states, not two.
  *
- * The role is never taken from client-supplied data or from JWT metadata a
- * user could influence — it is read from `profiles`, which only an admin can
- * change (enforced by RLS).
+ * "Signed in but has no profile" is not the same as "signed out", and
+ * collapsing them causes a redirect loop: the layout sends the user to /login
+ * because they have no role, the proxy sees a valid session and sends them
+ * back to /dashboard, forever. Keeping the states separate lets the app say
+ * what is actually wrong.
  */
-export async function getCurrentProfile(): Promise<CurrentUser | null> {
+export type AuthState =
+  | { status: "anonymous" }
+  | { status: "no-profile"; userId: string; email: string | null }
+  | { status: "ok"; user: CurrentUser };
+
+export async function getAuthState(): Promise<AuthState> {
   const supabase = await createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (!user) return { status: "anonymous" };
 
   const { data, error } = await supabase
     .from("profiles")
     .select("id, email, full_name, role")
     .eq("id", user.id)
-    .single<Pick<Profile, "id" | "email" | "full_name" | "role">>();
+    .maybeSingle<Pick<Profile, "id" | "email" | "full_name" | "role">>();
 
-  if (error || !data) {
-    // The signup trigger creates the profile. If it is missing, the account is
-    // in a broken state — treat it as unauthenticated rather than guessing a
-    // role, which would be the one guess with security consequences.
-    console.error("No profile row for signed-in user", user.id, error?.message);
-    return null;
+  if (error) {
+    console.error("Could not read the profile for", user.id, error.message);
+    return { status: "no-profile", userId: user.id, email: user.email ?? null };
+  }
+
+  if (!data) {
+    // The signup trigger should have created this. If it is missing, the
+    // account genuinely cannot be used — never default it to a role, since
+    // that is the one guess with security consequences.
+    return { status: "no-profile", userId: user.id, email: user.email ?? null };
   }
 
   if (!isValidRole(data.role)) {
-    console.error("Profile has an unrecognised role", data.role);
-    return null;
+    console.error("Profile has an unrecognised role:", data.role);
+    return { status: "no-profile", userId: user.id, email: user.email ?? null };
   }
 
   return {
-    id: data.id,
-    email: data.email,
-    fullName: data.full_name,
-    role: data.role,
+    status: "ok",
+    user: {
+      id: data.id,
+      email: data.email,
+      fullName: data.full_name,
+      role: data.role,
+    },
   };
 }
 
-/** Same, but sends anyone without a usable profile to the login page. */
+/** The signed-in user, or null if they are not usable. */
+export async function getCurrentProfile(): Promise<CurrentUser | null> {
+  const state = await getAuthState();
+  return state.status === "ok" ? state.user : null;
+}
+
+/**
+ * The signed-in user, redirecting only when they are genuinely signed out.
+ *
+ * A missing profile is deliberately NOT redirected — the protected layout
+ * renders an explanation instead.
+ */
 export async function requireProfile(): Promise<CurrentUser> {
-  const profile = await getCurrentProfile();
-  if (!profile) redirect("/login");
-  return profile;
+  const state = await getAuthState();
+  if (state.status === "ok") return state.user;
+  if (state.status === "anonymous") redirect("/login");
+  // Reached only if a page calls this directly; the layout handles it first.
+  redirect("/account-setup");
 }

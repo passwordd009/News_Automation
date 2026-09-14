@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { AppSidebar } from "@/components/navigation/AppSidebar";
-import { requireProfile } from "@/lib/auth/getCurrentProfile";
+import { getAuthState } from "@/lib/auth/getCurrentProfile";
 import { can, capabilityForPath } from "@/lib/auth/permissions";
+import { AccountSetupNotice } from "@/components/navigation/AccountSetupNotice";
 
 /**
  * Server-side guard for every protected route.
@@ -16,8 +17,17 @@ export default async function ProtectedLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const profile = await requireProfile();
+  const state = await getAuthState();
 
+  if (state.status === "anonymous") redirect("/login");
+
+  // Signed in with no profile row. Redirecting to /login here would loop: the
+  // proxy sees a valid session and sends them straight back. Explain instead.
+  if (state.status === "no-profile") {
+    return <AccountSetupNotice email={state.email} userId={state.userId} />;
+  }
+
+  const profile = state.user;
   const pathname = (await headers()).get("x-pathname") ?? "";
   const capability = capabilityForPath(pathname);
 
