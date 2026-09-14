@@ -1,39 +1,68 @@
 -- Promote the first admin.
 --
--- Run this ONCE, by hand, after signing up through the app. Deliberately not a
--- migration: "whoever signs up first becomes admin" is a race, and a hardcoded
--- email in version control is worse.
+-- Run this ONCE, after signing up through the app.
 --
---   1. Sign up through the app with your real email.
---   2. Replace the address below.
---   3. Run it in the Supabase SQL editor, or:
+--   1. Sign up with your real email.
+--   2. Change the address on the ADMIN EMAIL line below.
+--   3. Run the whole file — paste it into the Supabase SQL editor, or:
 --      psql "$SUPABASE_DB_URL" -f supabase/seed_admin.sql
+--
+-- Deliberately not a migration: "whoever signs up first becomes admin" is a
+-- race, and a hardcoded email in version control is worse.
+--
+-- Plain SQL only, no psql backslash commands, so it runs in the Supabase SQL
+-- editor as well as in psql.
 
-\set admin_email 'you@example.com'
-
-update public.profiles
-   set role = 'admin'
- where id = (select id from auth.users where email = :'admin_email');
-
--- Fail loudly rather than silently doing nothing if the email does not match.
 do $$
-declare n int;
+declare
+  -- ADMIN EMAIL — change this to yours, then run the file.
+  admin_email text := 'you@example.com';
+
+  target_user uuid;
+  admin_count integer;
 begin
-  select count(*) into n from public.profiles where role = 'admin';
-  if n = 0 then
-    raise exception 'No admin was set. Check that the email matches a signed-up user.';
+  -- No "did you edit the placeholder?" check: it would have to compare against
+  -- the placeholder literal, and a find-and-replace of you@example.com — which
+  -- is how people actually edit this — changes both sides and trips it. If the
+  -- address was not edited, the lookup below fails and names it.
+
+  select id into target_user
+    from auth.users
+   where lower(email) = lower(trim(admin_email));
+
+  if target_user is null then
+    raise exception
+      'No account found for %. Sign up through the app first, then re-run this.',
+      admin_email;
   end if;
-  raise notice 'Admin count: %', n;
+
+  update public.profiles set role = 'admin' where id = target_user;
+
+  if not found then
+    raise exception
+      'User % exists but has no profile row. Apply the migrations first '
+      '(supabase db push), which attaches the signup trigger and backfills.',
+      admin_email;
+  end if;
+
+  select count(*) into admin_count from public.profiles where role = 'admin';
+  raise notice 'Promoted % to admin. Total admins: %.', admin_email, admin_count;
 end;
 $$;
 
--- Open the first editorial week if none exists yet.
+-- Open the first editorial week if none exists.
 --
--- Hestia posts each Monday covering the week just ended, so a period runs
--- Monday through Sunday. Postgres date_trunc('week', ...) already returns the
--- ISO Monday, so this is the Monday of the current week through that Sunday.
+-- Hestia posts each Monday covering the week just ended, so periods run Monday
+-- through Sunday. date_trunc('week', ...) already returns the ISO Monday.
 insert into public.weekly_periods (start_date, end_date, status)
 select date_trunc('week', current_date)::date,
        date_trunc('week', current_date)::date + 6,
        'active'
 where not exists (select 1 from public.weekly_periods where status = 'active');
+
+-- Confirm the result.
+select p.email,
+       p.role,
+       (select count(*) from public.weekly_periods where status = 'active') as active_weeks
+  from public.profiles p
+ where p.role = 'admin';

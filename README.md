@@ -63,10 +63,15 @@ supabase db push
 
 Then create your account through the app (step 4 below) and promote it once:
 
+Edit the `ADMIN EMAIL` line inside it, then run the whole file — either paste
+it into the **Supabase SQL editor**, or:
+
 ```bash
-# Edit the email inside first
 psql "$SUPABASE_DB_URL" -f supabase/seed_admin.sql
 ```
+
+It is plain SQL with no psql backslash commands, so both work. Running it twice
+is harmless.
 
 This is deliberately manual. "Whoever signs up first becomes admin" is a race,
 and a hardcoded email in version control is worse.
@@ -227,6 +232,12 @@ of redirecting, but if you are on an older checkout you will see a loop between
 `/login` and `/dashboard`. Fix it with `supabase db push` — the migration
 attaches the signup trigger and backfills anyone who registered before it
 existed. Then sign out and back in.
+
+**`syntax error at or near` when pasting SQL into the Supabase editor.** The
+web editor does not understand psql backslash commands (`\set`, `\echo`).
+`seed_admin.sql` and `fix_week_boundary.sql` are plain SQL and paste fine; the
+files under `supabase/tests/` are psql-only by design and are meant for the
+local harness, not your project.
 
 **"Supabase is not configured" on startup.** Supabase renamed its API keys:
 `anon` is now `publishable`, and `service_role` is now `secret`. Both names are
