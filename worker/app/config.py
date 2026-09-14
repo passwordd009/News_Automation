@@ -19,9 +19,27 @@ from dotenv import load_dotenv
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+REPO_ROOT = PROJECT_ROOT.parent
 DEFAULT_FEEDS_FILE = PROJECT_ROOT / "config" / "rss_feeds.json"
 
-load_dotenv(PROJECT_ROOT / ".env")
+#: Where the worker's settings are read from, most specific first.
+ENV_FILES = (PROJECT_ROOT / ".env", REPO_ROOT / ".env")
+
+# Absolute paths, so it does not matter which directory the worker is started
+# from — the dashboard button runs it from the repository root, cron from
+# somewhere else again. load_dotenv never overrides a variable that is already
+# set, so the first file to define a key wins and a real environment variable
+# beats both (which is what GitHub Actions relies on).
+for _env_file in ENV_FILES:
+    load_dotenv(_env_file)
+
+
+def env_file_status() -> str:
+    """Which settings files exist, for error messages."""
+    found = [str(path) for path in ENV_FILES if path.exists()]
+    if not found:
+        return f"No .env file found. Looked in: {', '.join(str(p) for p in ENV_FILES)}"
+    return f"Read settings from: {', '.join(found)}"
 
 
 def _env_str(name: str, default: str) -> str:

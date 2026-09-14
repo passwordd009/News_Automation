@@ -89,6 +89,11 @@ cp worker/.env.example worker/.env           # then fill it in
 Fill in `SUPABASE_URL` and `SUPABASE_SECRET_KEY` from **Project Settings →
 API**. (Older projects call it `service_role`; either variable name works.)
 
+These are **different from the two the dashboard uses.** The dashboard gets the
+publishable key; the worker needs the secret one. A repository-root `.env` also
+works if you would rather keep one file, and a real environment variable beats
+both — which is how the scheduled job runs with no file at all.
+
 > The secret key **bypasses Row Level Security entirely**. It belongs in
 > `worker/.env` and nowhere else — never in `web/`, never committed.
 
