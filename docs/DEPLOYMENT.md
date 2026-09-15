@@ -99,6 +99,9 @@ Put a proxy in front of it and make the worker prove itself. The worker sends
 `Authorization: Bearer $OLLAMA_AUTH_TOKEN` when that variable is set (and
 nothing when it is not, so localhost is unaffected).
 
+**`docs/OLLAMA_VM.md` is the runbook, and `scripts/setup_ollama_vm.sh` does it
+for you.** The pieces, for reference:
+
 A Caddyfile is about the smallest thing that works:
 
 ```caddy
@@ -152,7 +155,7 @@ timing out.
 |---|---|---|
 | 1 | ~~Token auth for a networked Ollama~~ | ✅ done |
 | 2 | ~~GitHub Actions: daily ingest, Monday-noon rotation~~ | ✅ done |
-| 3 | Stand up the VM: Ollama on localhost, Caddy with the token, firewall | you |
+| 3 | Stand up the VM — `docs/OLLAMA_VM.md`, scripted | you |
 | 4 | Add the secrets below, then run each workflow manually once | step 3 |
 | 5 | Point the button at `workflow_dispatch` instead of a local process | step 4 |
 | 6 | Deploy the dashboard to Vercel | — |

@@ -34,7 +34,7 @@ stories by editorial week.
 | `worker/` | Python ingestion and AI screening |
 | `web/` | Next.js editorial dashboard |
 | `supabase/` | Migrations, RLS policies, and their tests — the schema is the contract between the two |
-| `docs/` | The CMS spec and the migration plan |
+| `docs/` | The CMS spec, the migration plan, and the deployment runbooks |
 | `worker/legacy/` | The retired Google Docs workflow, kept for reference |
 
 ## The editorial week
@@ -107,6 +107,10 @@ ollama pull llama3.1
 Any Ollama model works; set `OLLAMA_MODEL`. The provider sits behind an
 interface, so Claude, OpenAI or Gemini can replace it by registering a client
 in `worker/app/llm/client.py` — nothing else changes.
+
+For production the model moves to a small server, since GitHub's runners cannot
+reach your laptop. `docs/OLLAMA_VM.md` is the runbook and
+`scripts/setup_ollama_vm.sh` provisions it.
 
 ### 4. The dashboard
 
