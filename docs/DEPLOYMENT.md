@@ -28,12 +28,18 @@ interface with one implementation; a hosted provider is a new class plus a line
 in `_PROVIDERS`, and `LLM_PROVIDER` switches between them. No other module
 changes — the reviewer, the pipeline and the prompts all stay as they are.
 
-**Decision: self-hosted Ollama on a VM**, keeping the current model and prompts
-and avoiding a per-article cost. The trade is that you maintain the box, and
-CPU-only inference is slow — see Sizing below.
+**Decision: the model runs on the GitHub Actions runner.** Ollama is installed
+per job, the weights come from cache, and the machine is thrown away when the
+run ends.
 
-A hosted API remains a one-class change if that trade stops being worth it:
-`LLMClient` is an interface, and `LLM_PROVIDER` selects the implementation.
+An always-on VM was the earlier plan and was the wrong shape for this: the
+daily run is minutes long, so a machine billed by the hour sits idle roughly
+99% of the week. Runner-hosted costs nothing on a public repository, exposes no
+port, and needs no token.
+
+See `docs/OLLAMA_VM.md`. Setting the `OLLAMA_URL` secret still switches to a
+hosted instance with no code change, and a hosted API is a one-class addition
+if the runner turns out too slow.
 
 ### 2. Nothing runs the worker
 
@@ -155,8 +161,8 @@ timing out.
 |---|---|---|
 | 1 | ~~Token auth for a networked Ollama~~ | ✅ done |
 | 2 | ~~GitHub Actions: daily ingest, Monday-noon rotation~~ | ✅ done |
-| 3 | Stand up the VM — `docs/OLLAMA_VM.md`, scripted | you |
-| 4 | Add the secrets below, then run each workflow manually once | step 3 |
+| 3 | ~~Run the model on the runner — no host to stand up~~ | ✅ done |
+| 4 | Add the Supabase secrets, then run each workflow manually once | you |
 | 5 | Point the button at `workflow_dispatch` instead of a local process | step 4 |
 | 6 | Deploy the dashboard to Vercel | — |
 | 7 | Harden: rotate keys, confirm RLS in production, Supabase auth settings | — |
@@ -171,13 +177,16 @@ In **Settings → Secrets and variables → Actions**:
 |---|---|
 | `SUPABASE_URL` | your project URL |
 | `SUPABASE_SECRET_KEY` | the secret (service-role) key — never in Vercel |
-| `OLLAMA_URL` | `https://ollama.example.com` |
-| `OLLAMA_AUTH_TOKEN` | the token from the Caddyfile |
+| `OLLAMA_URL` | **only** to use a hosted model instead of the runner |
+| `OLLAMA_AUTH_TOKEN` | with `OLLAMA_URL`, if it is behind a proxy |
 
 | Variable | Default if unset |
 |---|---|
-| `OLLAMA_MODEL` | `llama3.1` |
+| `OLLAMA_MODEL` | `llama3.2:3b` |
 | `TIMEZONE` | `America/New_York` |
+
+Only the two Supabase secrets are required. Leave the Ollama ones unset and the
+model runs on the runner.
 
 Both workflows have `workflow_dispatch`, so run each once by hand from the
 Actions tab before trusting the schedule. `ingest.py --check` runs first and

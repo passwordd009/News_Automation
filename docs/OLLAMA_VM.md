@@ -1,106 +1,109 @@
-# Setting up the model VM
+# Where the model runs
 
 The worker needs a model it can reach. On your laptop that is Ollama on
-localhost; in production it is a small server, because GitHub's runners cannot
-reach your laptop.
-
-Two scripts do the work. Most of this page explains what they do and why, so
-you can check them before running anything as root.
+localhost. In production there are three answers, and the cheapest is also the
+simplest.
 
 ---
 
-## Before you start
+## The duty cycle decides this
 
-**A domain name you control.** Caddy gets an HTTPS certificate automatically,
-but only for a name with an A record pointing at the VM. A subdomain is fine —
-`ollama.yourdomain.com`.
+The daily run screens a few dozen articles and stops. Call it 15 minutes a day
+— **under two hours a week.** Any option that bills by the hour is idle about
+99% of the time.
 
-**A VM.** What matters is RAM, because the model is held in memory:
+| | Cost shape | Idle cost |
+|---|---|---|
+| **Runner-hosted** (default) | free on a public repo | none — nothing exists between runs |
+| **Hosted API** | per article screened | none |
+| **Always-on VM** | per hour, all week | ~99% of the bill |
 
-| | Enough for |
+## Runner-hosted — what this repo does now
+
+`.github/workflows/ingest.yml` installs Ollama on the GitHub Actions runner,
+restores the weights from cache, screens the articles, and throws the whole
+machine away when the job ends.
+
+There is nothing to provision, nothing to patch, no port to protect and no
+token to leak — the model only ever listens on the runner's own localhost, for
+the life of one job.
+
+**Cost: nothing.** Actions minutes are free and unlimited on public
+repositories, and this one is public.
+
+### What you give up
+
+The runner has no GPU, so screening is slower per article than a machine you
+would pick for the job. That is why the workflow defaults to a small model
+(`llama3.2:3b`) rather than `llama3.1` — on CPU, an 8B model spends
+considerably longer per article for judgement that is not obviously better at
+"is this useful to a New Yorker".
+
+Weights are cached between runs, so only the first run pays the download. A
+daily schedule keeps the cache warm; GitHub evicts entries unused for a week.
+
+### Changing the model
+
+Set the `OLLAMA_MODEL` repository **variable**. Larger is slower:
+
+| Model | |
 |---|---|
-| 8 GB RAM, 2 vCPU, 25 GB disk | an 8B model such as `llama3.1`, slowly |
-| 16 GB RAM, 4 vCPU | the same model with room to spare, noticeably quicker |
-| A GPU instance | fast, and considerably more expensive |
+| `llama3.2:3b` | the default — quick enough on runner CPU |
+| `llama3.1` | 8B, noticeably slower per article |
 
-Start at the bottom of that table. The check script measures how long a real
-review takes on the hardware you picked, so you can decide with a number rather
-than a guess.
-
-**Ubuntu or Debian.** The setup script uses `apt`.
+The first run on a new model pays the download again, since the cache key
+includes the name.
 
 ---
 
-## 1. Provision
+## Hosted API — when the runner is too slow
 
-Copy the script to the VM and run it:
+If runs start taking too long, or the small model's judgement is not good
+enough, a hosted API is the next step rather than a VM. It has the same "pay
+only when running" shape and needs no infrastructure.
+
+`LLMClient` (`worker/app/llm/client.py`) is an interface with one
+implementation. Adding Claude, OpenAI or Gemini is a class plus a line in
+`_PROVIDERS`, and `LLM_PROVIDER` selects it. The reviewer, the prompts and the
+pipeline do not change.
+
+---
+
+## Always-on VM — probably not worth it
+
+Worth it only if you want a specific large model, already have a machine, or
+have enough other work to keep it busy. For this workload it is the most
+expensive option and the only one with a security surface to maintain.
+
+If you do go this way, `scripts/setup_ollama_vm.sh` provisions it and
+`scripts/check_ollama_vm.sh` verifies it from outside. Setting the `OLLAMA_URL`
+secret switches the workflow to it automatically — no code change.
+
+The reason it needs a proxy at all: **Ollama has no authentication**, and this
+repository is public. The tidy arrangement — a self-hosted runner on the VM,
+model on localhost — would let anyone's pull request run on that machine. So
+the setup script binds Ollama to `127.0.0.1`, puts Caddy in front demanding a
+bearer token, and closes the firewall.
 
 ```bash
 scp scripts/setup_ollama_vm.sh you@your-vm:~
-ssh you@your-vm
-sudo bash setup_ollama_vm.sh ollama.yourdomain.com
-```
+ssh you@your-vm && sudo bash setup_ollama_vm.sh ollama.yourdomain.com
 
-It is idempotent — run it again any time; it keeps the token it already made.
-
-What it does:
-
-1. **Checks DNS first.** A name that does not resolve here fails certificate
-   issuance later with a confusing TLS error, so it is worth catching up front.
-2. **Installs Ollama and binds it to `127.0.0.1`.** The most important line in
-   the script. Ollama has no authentication; left on the default address it
-   listens on all interfaces with no password.
-3. **Generates a token** into `/etc/hestia/ollama-token`, mode 600.
-4. **Installs Caddy** as a reverse proxy that returns 401 without that exact
-   bearer token, and gets a certificate automatically.
-5. **Closes the firewall** to everything but 22, 80 and 443.
-6. **Pulls the model** — several GB, so it takes a few minutes.
-
-At the end it prints the token and the two secrets to add to GitHub.
-
-## 2. Verify from somewhere else
-
-Run this from your laptop. The point is to see the host the way GitHub's
-runners will:
-
-```bash
+# then, from your laptop — it also times a real review
 ./scripts/check_ollama_vm.sh https://ollama.yourdomain.com YOUR_TOKEN
 ```
 
-It checks that the host refuses anonymous requests, that port 11434 is not
-reachable directly (a proxy is no use if it can be walked around), that the
-model is pulled, and then **times one real review**.
+Add `OLLAMA_URL` and `OLLAMA_AUTH_TOKEN` as Actions secrets and the workflow
+uses the VM instead of the runner.
 
-That timing is the number to pay attention to:
+**Tailscale** is the stronger variant: the runner joins your tailnet and the VM
+never appears on the public internet at all.
 
-```
-  ✓ generated a reply in 18s
-    At ~50 articles a day that is roughly 15 minutes per run.
-```
+---
 
-Over about 40 minutes a day and the workflow will hit its timeout. The fix is a
-smaller model, a bigger machine, or capping runs with `--limit`.
+## Pointing your laptop at a hosted instance
 
-## 3. Connect it
-
-Add to **GitHub → Settings → Secrets and variables → Actions**:
-
-| Secret | |
-|---|---|
-| `OLLAMA_URL` | `https://ollama.yourdomain.com` |
-| `OLLAMA_AUTH_TOKEN` | the token the script printed |
-
-and as a repository **variable**:
-
-| Variable | |
-|---|---|
-| `OLLAMA_MODEL` | `llama3.1` |
-
-Then run **Collect articles** from the Actions tab. `ingest.py --check` runs
-first and reports Supabase and the model separately.
-
-To point your laptop at the VM instead of a local Ollama, put the same two
-values in `worker/.env`:
+Put the same two values in `worker/.env`:
 
 ```
 OLLAMA_URL=https://ollama.yourdomain.com
@@ -108,43 +111,4 @@ OLLAMA_AUTH_TOKEN=...
 ```
 
 The worker sends the token when it is set and omits it when it is not, so
-switching back to localhost needs no other change.
-
----
-
-## Why a proxy at all
-
-Because **Ollama has no authentication**, and your repository is public.
-
-The tidiest arrangement would be a self-hosted GitHub runner on the VM itself,
-with Ollama never leaving localhost. That is not available here: on a public
-repository, anyone can open a pull request, and a self-hosted runner would run
-it on your machine.
-
-So GitHub's hosted runners have to reach the VM across the internet, and the
-only thing standing in front of the model is the token. Treat it like a
-password. If it leaks, generate a new one and re-run the setup script.
-
-**Tailscale** avoids the exposure entirely — the runner joins your tailnet with
-`tailscale/github-action` and `OLLAMA_URL` becomes a tailnet address, so the VM
-never appears on the public internet. More moving parts; stronger position. The
-worker needs no changes either way.
-
----
-
-## Keeping it running
-
-```bash
-systemctl status ollama caddy      # both should be active
-journalctl -u ollama -n 50         # model errors
-journalctl -u caddy -n 50          # certificate and proxy errors
-ollama list                        # what is installed
-```
-
-**Cost.** The VM bills whether or not it is screening anything, and it is idle
-most of the day. If that stops being worth it, a hosted API is a one-class
-change: `LLMClient` is an interface, and `LLM_PROVIDER` selects the
-implementation.
-
-**Updates.** `apt upgrade` and the occasional `ollama pull` to refresh the
-model. Nothing in the worker pins a model version.
+switching back to a local Ollama needs no other change.

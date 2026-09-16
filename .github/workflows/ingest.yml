@@ -4,6 +4,13 @@ name: Collect articles
 #
 # Runs every morning, and on demand — the dashboard's "Collect new articles"
 # button triggers this same workflow rather than spawning a local process.
+#
+# The model runs ON THE RUNNER by default: Ollama is installed, the weights are
+# restored from cache, and everything disappears when the job ends. Nothing is
+# running — or being paid for — the rest of the week, and no model is exposed
+# to the internet.
+#
+# Setting the OLLAMA_URL secret switches to a hosted instance instead.
 on:
   schedule:
     # 06:00 America/New_York. GitHub cron is UTC and does not follow daylight
@@ -25,18 +32,16 @@ concurrency:
 jobs:
   collect:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Generous: a cold model pull plus screening on runner CPU.
+    timeout-minutes: 120
 
-    # Set once for the job. GitHub Actions does not support YAML anchors, so
-    # repeating this per step is the only alternative.
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-      OLLAMA_URL: ${{ secrets.OLLAMA_URL }}
-      OLLAMA_AUTH_TOKEN: ${{ secrets.OLLAMA_AUTH_TOKEN }}
-      OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'llama3.1' }}
+      # A small model. The runner has no GPU, and an 8B model spends far longer
+      # per article for judgement that is not obviously better at this task.
+      OLLAMA_MODEL: ${{ vars.OLLAMA_MODEL || 'llama3.2:3b' }}
       TIMEZONE: ${{ vars.TIMEZONE || 'America/New_York' }}
-      # A hosted model over the network is slower than one on localhost.
       LLM_TIMEOUT: "300"
 
     steps:
@@ -68,6 +73,66 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # A secret cannot be read in an `if:` condition, so turn it into an output.
+      - name: Where does the model run?
+        id: model
+        if: steps.gate.outputs.run == 'true'
+        env:
+          REMOTE_URL: ${{ secrets.OLLAMA_URL }}
+        run: |
+          if [ -n "$REMOTE_URL" ]; then
+            echo "mode=remote" >> "$GITHUB_OUTPUT"
+            echo "Using the hosted model at the configured URL."
+          else
+            echo "mode=runner" >> "$GITHUB_OUTPUT"
+            echo "Running the model on this runner — nothing to host or pay for."
+          fi
+
+      # Weights are several GB. Caching turns a ~2 minute download into seconds,
+      # and a daily run keeps the entry from being evicted.
+      - name: Restore the model
+        if: steps.model.outputs.mode == 'runner'
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama/models
+          key: ollama-${{ env.OLLAMA_MODEL }}-v1
+
+      - name: Start Ollama on the runner
+        if: steps.model.outputs.mode == 'runner'
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          # The install script starts a service on some images and not others;
+          # starting it here either way is harmless.
+          (ollama serve > /tmp/ollama.log 2>&1 &)
+
+          for _ in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1 && break
+            sleep 2
+          done
+
+          if ! curl -fsS http://127.0.0.1:11434/api/tags >/dev/null 2>&1; then
+            echo "Ollama did not come up. Log:" >&2
+            tail -40 /tmp/ollama.log >&2
+            exit 1
+          fi
+
+          echo "Pulling $OLLAMA_MODEL (cached after the first run)..."
+          start=$(date +%s)
+          ollama pull "$OLLAMA_MODEL"
+          echo "Model ready in $(( $(date +%s) - start ))s."
+
+          # Point the worker at the runner's own instance.
+          echo "OLLAMA_URL=http://127.0.0.1:11434" >> "$GITHUB_ENV"
+
+      - name: Use the hosted model
+        if: steps.model.outputs.mode == 'remote'
+        env:
+          REMOTE_URL: ${{ secrets.OLLAMA_URL }}
+          REMOTE_TOKEN: ${{ secrets.OLLAMA_AUTH_TOKEN }}
+        run: |
+          echo "OLLAMA_URL=$REMOTE_URL" >> "$GITHUB_ENV"
+          echo "OLLAMA_AUTH_TOKEN=$REMOTE_TOKEN" >> "$GITHUB_ENV"
+
       - name: Check connections
         if: steps.gate.outputs.run == 'true'
         run: python worker/scripts/ingest.py --check
@@ -82,6 +147,7 @@ jobs:
         env:
           LIMIT: ${{ inputs.limit }}
         run: |
+          start=$(date +%s)
           if [ -z "$LIMIT" ]; then
             python worker/scripts/ingest.py --review require
           elif printf '%s' "$LIMIT" | grep -Eq '^[0-9]+$'; then
@@ -90,3 +156,4 @@ jobs:
             echo "limit must be a whole number, got: $LIMIT" >&2
             exit 1
           fi
+          echo "Run took $(( ($(date +%s) - start) / 60 )) minutes."
