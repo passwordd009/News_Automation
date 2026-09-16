@@ -51,7 +51,7 @@ rolls over.
 
 ## Setup
 
-Needs **Python 3.12+** (3.11 works), **Node 20+**, a **Supabase project**, and
+Needs **Python 3.12+** (3.11 works), **Node 22+**, a **Supabase project**, and
 **[Ollama](https://ollama.com)** for the AI screening.
 
 ### 1. Database
@@ -116,6 +116,7 @@ reach your laptop. `docs/OLLAMA_VM.md` is the runbook and
 
 ```bash
 cd web
+nvm use          # or install Node 22+ — supabase-js requires it
 npm install
 cp .env.example .env.local                   # then fill it in
 npm run dev
@@ -251,6 +252,10 @@ tested, not eyeballed.
 ---
 
 ## Troubleshooting
+
+**"Node.js 20 and below are deprecated" from supabase-js.** It requires Node
+22 or later. `web/.nvmrc` pins 22, so `nvm use` in `web/` picks it up; without
+it the client still works today but is running unsupported.
 
 **`ingest.py` aborts saying the model is unreachable.** Deliberate. If the
 model is down, filing a whole run of unscored articles would bury the review
