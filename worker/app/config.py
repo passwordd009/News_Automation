@@ -124,7 +124,7 @@ class Settings:
     http_timeout: int = 20
     http_user_agent: str = "ProjectHestiaNewsBot/0.1 (+https://github.com/passwordd009/News_Automation)"
     max_articles_per_feed: int = 40
-    lookback_days: int = 2
+    lookback_days: int = 8
 
     # LLM — read here so nothing else needs to know which provider is in use
     llm_provider: str = "ollama"
@@ -246,7 +246,7 @@ def get_settings() -> Settings:
             "ProjectHestiaNewsBot/0.1 (+https://github.com/passwordd009/News_Automation)",
         ),
         max_articles_per_feed=_env_int("MAX_ARTICLES_PER_FEED", 40),
-        lookback_days=_env_int("LOOKBACK_DAYS", 2),
+        lookback_days=_env_int("LOOKBACK_DAYS", 8),
         llm_provider=_env_str("LLM_PROVIDER", "ollama"),
         ollama_url=_env_str("OLLAMA_URL", "http://localhost:11434"),
         ollama_model=_env_str("OLLAMA_MODEL", "llama3.1"),

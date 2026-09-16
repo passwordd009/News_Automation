@@ -431,3 +431,84 @@ def test_missing_credentials_give_an_actionable_error():
 
     with pytest.raises(SupabaseError, match="SUPABASE_URL"):
         store.active_period()
+
+
+# --------------------------------------------------------------------------- #
+# collecting one day at a time
+# --------------------------------------------------------------------------- #
+
+def _at(iso: str) -> ArticleCandidate:
+    """A candidate published at a given instant."""
+    return ArticleCandidate(
+        title=f"Story {iso}",
+        url=f"https://example.com/{iso}",
+        source="Example",
+        collector="rss",
+        published_at=datetime.fromisoformat(iso),
+    )
+
+
+def test_day_bounds_follow_the_newsroom_clock():
+    from datetime import date as date_type
+    from app.services.ingest_pipeline import day_bounds
+
+    start, end = day_bounds(date_type(2026, 9, 14), "America/New_York")
+
+    # September is EDT, so a New York day starts at 04:00 UTC.
+    assert start.isoformat() == "2026-09-14T00:00:00-04:00"
+    assert (end - start).days == 1
+
+
+def test_only_that_day_is_kept(monkeypatch):
+    from datetime import date as date_type
+
+    _feeds(monkeypatch, [
+        _at("2026-09-13T20:00:00+00:00"),  # Sunday evening ET
+        _at("2026-09-14T13:00:00+00:00"),  # Monday morning ET
+        _at("2026-09-14T22:00:00+00:00"),  # Monday evening ET
+        _at("2026-09-15T13:00:00+00:00"),  # Tuesday ET
+    ])
+    fake = FakeSupabase(periods=[ACTIVE_PERIOD])
+    store = SupabaseStore(client=fake, settings=Settings())
+
+    stats = run_ingest(
+        Settings(), store=store, reviewer=None, review="never",
+        for_date=date_type(2026, 9, 14),
+    )
+
+    assert stats.fetched == 4
+    assert stats.inserted == 2
+
+
+def test_a_day_boundary_is_local_not_utc(monkeypatch):
+    """03:00 UTC on Tuesday is still Monday evening in New York."""
+    from datetime import date as date_type
+
+    _feeds(monkeypatch, [_at("2026-09-15T03:00:00+00:00")])
+    fake = FakeSupabase(periods=[ACTIVE_PERIOD])
+    store = SupabaseStore(client=fake, settings=Settings())
+
+    stats = run_ingest(
+        Settings(), store=store, review="never", for_date=date_type(2026, 9, 14)
+    )
+
+    assert stats.inserted == 1
+
+
+def test_undated_articles_fall_back_to_when_they_were_found(monkeypatch):
+    """Matches the database's effective_date: published_at, else fetched_at."""
+    from datetime import date as date_type
+
+    undated = ArticleCandidate(
+        title="No date given", url="https://example.com/undated", source="Example",
+        discovered_at=datetime(2026, 9, 14, 15, 0, tzinfo=timezone.utc),
+    )
+    _feeds(monkeypatch, [undated])
+    fake = FakeSupabase(periods=[ACTIVE_PERIOD])
+    store = SupabaseStore(client=fake, settings=Settings())
+
+    stats = run_ingest(
+        Settings(), store=store, review="never", for_date=date_type(2026, 9, 14)
+    )
+
+    assert stats.inserted == 1

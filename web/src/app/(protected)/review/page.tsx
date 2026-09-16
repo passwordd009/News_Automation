@@ -1,27 +1,53 @@
+import { redirect } from "next/navigation";
 import { requireProfile } from "@/lib/auth/getCurrentProfile";
 import { can } from "@/lib/auth/permissions";
-import { getReviewQueue } from "@/lib/articles/queries";
+import { getPendingCountsByDay, getReviewQueue } from "@/lib/articles/queries";
 import { ReviewArticleCard } from "@/components/articles/ReviewArticleCard";
+import { DayActions } from "@/components/articles/DayActions";
+import { WeekDayTabs } from "@/components/weekly/WeekDayTabs";
 import { formatPeriodRange } from "@/lib/format";
-import { redirect } from "next/navigation";
-import { RunIngestButton } from "@/components/articles/RunIngestButton";
+import { defaultDay, isValidDay, weekDays } from "@/lib/week";
 import { workerAvailable } from "@/lib/worker/localWorker";
 
 export const metadata = { title: "Review · Project Hestia" };
 
-export default async function ReviewPage() {
+export default async function ReviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ day?: string }>;
+}) {
   // Checked here as well as in the layout: a page should not depend on a
   // parent's guard for its own authorization.
   const profile = await requireProfile();
   if (!can(profile.role, "viewPendingQueue")) redirect("/dashboard?denied=1");
 
-  const { period, articles } = await getReviewQueue();
+  const { day: requestedDay } = await searchParams;
+  const { period } = await getReviewQueue();
 
-  // Offered whenever the worker is installed beside the dashboard. The route
-  // re-checks this and the caller's role regardless of what is rendered.
-  const canRunWorker = workerAvailable();
+  // Without an open week there is no set of days to show.
+  if (!period) {
+    return (
+      <main className="mx-auto max-w-3xl px-6 py-10">
+        <h1 className="text-2xl font-semibold tracking-tight">No active week</h1>
+        <p className="mt-2 text-sm text-muted">
+          Collect articles to open one, or run{" "}
+          <code>python worker/scripts/rotate_week.py</code>.
+        </p>
+      </main>
+    );
+  }
 
-  const recommended = articles.filter((a) => a.ai_recommended).length;
+  const days = weekDays(period.start_date);
+  // A day that has not happened cannot be opened, whatever the URL says.
+  const selected = isValidDay(requestedDay, days) ? requestedDay : defaultDay(days);
+  const selectedDay = days.find((d) => d.date === selected)!;
+
+  const [{ articles }, counts] = await Promise.all([
+    getReviewQueue(selected),
+    getPendingCountsByDay(days.filter((d) => !d.isFuture).map((d) => d.date)),
+  ]);
+
+  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -30,36 +56,33 @@ export default async function ReviewPage() {
           Review queue
         </h1>
         <p className="mt-1 text-2xl font-semibold tracking-tight">
-          {period
-            ? formatPeriodRange(period.start_date, period.end_date)
-            : "No active week"}
+          {formatPeriodRange(period.start_date, period.end_date)}
         </p>
         <p className="mt-1 text-sm text-muted">
-          {articles.length === 0
-            ? "Nothing waiting."
-            : `${articles.length} article${articles.length === 1 ? "" : "s"} awaiting a decision · ${recommended} AI-recommended`}
+          {total === 0
+            ? "Nothing waiting this week."
+            : `${total} article${total === 1 ? "" : "s"} awaiting a decision this week`}
         </p>
       </header>
 
-      {canRunWorker && (
-        <div className="mt-6 rounded-lg border border-border bg-surface px-5 py-4">
-          <RunIngestButton />
-        </div>
-      )}
+      <WeekDayTabs days={days} selected={selected} counts={counts} />
+
+      <DayActions
+        day={selected}
+        label={selectedDay.label}
+        pendingCount={articles.length}
+        canCollect={workerAvailable()}
+        canClear={profile.role === "admin"}
+      />
 
       {articles.length === 0 ? (
         <div className="mt-8 rounded-lg border border-dashed border-border px-6 py-12 text-center">
-          <p className="text-sm font-medium">The queue is empty.</p>
-          <p className="mt-2 text-sm text-muted">
-            {canRunWorker
-              ? "Use the button above to collect and screen new articles."
-              : "Run the worker to collect and screen new articles:"}
+          <p className="text-sm font-medium">Nothing from {selectedDay.label}.</p>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted">
+            {workerAvailable()
+              ? `Collect ${selectedDay.label}'s news above. Feeds only carry their recent entries, so a day that has scrolled off the end of every feed may return nothing.`
+              : "Run the worker to collect articles."}
           </p>
-          {!canRunWorker && (
-            <code className="mt-3 inline-block rounded bg-background px-3 py-1.5 text-xs">
-              python worker/scripts/ingest.py
-            </code>
-          )}
         </div>
       ) : (
         <>
@@ -72,10 +95,10 @@ export default async function ReviewPage() {
           </ol>
 
           <p className="mt-10 text-xs leading-relaxed text-muted">
-            Sorted with reconsiderations first, then the AI&apos;s
-            recommendations, then by score. Everything collected is listed —
-            low-scoring stories sink to the bottom rather than being hidden, so
-            the decision stays yours.
+            {selectedDay.label}&apos;s articles, sorted with reconsiderations
+            first, then the AI&apos;s recommendations, then by score. Everything
+            collected is listed — low-scoring stories sink to the bottom rather
+            than being hidden, so the decision stays yours.
           </p>
         </>
       )}

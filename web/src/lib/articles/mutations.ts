@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth/getCurrentProfile";
 import { can } from "@/lib/auth/permissions";
+import { dayRange } from "@/lib/week";
 
 /**
  * Editorial decisions.
@@ -87,4 +88,47 @@ function deleteAfter(): string {
   const when = new Date();
   when.setUTCDate(when.getUTCDate() + (Number.isFinite(days) ? days : 21));
   return when.toISOString();
+}
+
+
+/**
+ * Permanently delete the undecided articles for one day.
+ *
+ * This is a real delete, not a decline — the rows are gone and cannot be
+ * recovered or reconsidered. It exists to empty a day of noise you never want
+ * to look at again.
+ *
+ * Deliberately limited to `pending`. An approved or declined article is a
+ * decision someone made, and a "clear this day" button should not quietly
+ * throw those away; they stay, and stay auditable.
+ *
+ * Only an admin can do this: the `articles_delete_admin` RLS policy is the
+ * enforcement, and this check just turns a silent no-op into a clear message.
+ */
+export async function clearDay(day: string): Promise<ActionResult & { deleted?: number }> {
+  const profile = await getCurrentProfile();
+  if (!profile) return { ok: false, error: "You are not signed in." };
+  if (profile.role !== "admin") {
+    return { ok: false, error: "Only an admin can delete articles." };
+  }
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    return { ok: false, error: "Invalid day." };
+  }
+
+  const { start, end } = dayRange(day);
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("articles")
+    .delete()
+    .eq("status", "pending")
+    .gte("effective_date", start)
+    .lt("effective_date", end)
+    .select("id");
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/review");
+  return { ok: true, deleted: data?.length ?? 0 };
 }

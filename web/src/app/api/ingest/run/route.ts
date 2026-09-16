@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/auth/getCurrentProfile";
 import { can } from "@/lib/auth/permissions";
-import { isRunning, runWorker, validateLimit, workerAvailable } from "@/lib/worker/localWorker";
+import {
+  isRunning,
+  runWorker,
+  validateDate,
+  validateLimit,
+  workerAvailable,
+} from "@/lib/worker/localWorker";
 
 // child_process is not available on the edge runtime.
 export const runtime = "nodejs";
@@ -42,14 +48,16 @@ export async function POST(request: Request) {
   }
 
   let limit: number | null;
+  let forDate: string | null;
   try {
     const body = await request.json().catch(() => ({}));
     limit = validateLimit(body?.limit);
+    forDate = validateDate(body?.date);
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 400 });
   }
 
-  const result = await runWorker(limit);
+  const result = await runWorker(limit, forDate);
 
   return NextResponse.json(result, { status: result.ok ? 200 : 500 });
 }

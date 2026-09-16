@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { dayRange } from "@/lib/week";
 import type { Article, WeeklyPeriod } from "@/types/database";
 
 /**
@@ -35,14 +36,23 @@ export interface ReviewQueue {
  * reconsiderations first, then AI-recommended, then by score, so the strongest
  * candidates rise and the weakest sink without being silently dropped.
  */
-export async function getReviewQueue(): Promise<ReviewQueue> {
+export async function getReviewQueue(day?: string): Promise<ReviewQueue> {
   const supabase = await createClient();
   const period = await getActivePeriod();
 
-  const { data, error } = await supabase
+  let query = supabase
     .from("articles")
     .select("*")
-    .in("status", ["pending", "reconsideration_requested"])
+    .in("status", ["pending", "reconsideration_requested"]);
+
+  if (day) {
+    // effective_date is published_at, or the fetch time when the feed gave
+    // none — so an article sits under the day it actually appeared.
+    const { start, end } = dayRange(day);
+    query = query.gte("effective_date", start).lt("effective_date", end);
+  }
+
+  const { data, error } = await query
     .order("status", { ascending: false })
     .order("ai_recommended", { ascending: false })
     .order("overall_score", { ascending: false, nullsFirst: false })
@@ -102,4 +112,34 @@ export async function getPeriod(periodId: string): Promise<WeeklyPeriod | null> 
     .eq("id", periodId)
     .maybeSingle<WeeklyPeriod>();
   return data ?? null;
+}
+
+/** How many articles are waiting on each day of the week. */
+export async function getPendingCountsByDay(days: string[]): Promise<Record<string, number>> {
+  const supabase = await createClient();
+  if (days.length === 0) return {};
+
+  // One query for the whole span, bucketed here — seven round trips to count
+  // seven numbers would be wasteful.
+  const { start } = dayRange(days[0]);
+  const { end } = dayRange(days[days.length - 1]);
+
+  const { data, error } = await supabase
+    .from("articles")
+    .select("effective_date")
+    .in("status", ["pending", "reconsideration_requested"])
+    .gte("effective_date", start)
+    .lt("effective_date", end)
+    .returns<{ effective_date: string }[]>();
+
+  if (error || !data) return {};
+
+  const counts: Record<string, number> = {};
+  for (const day of days) {
+    const range = dayRange(day);
+    counts[day] = data.filter(
+      (row) => row.effective_date >= range.start && row.effective_date < range.end,
+    ).length;
+  }
+  return counts;
 }

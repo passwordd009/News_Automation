@@ -270,6 +270,55 @@ $$;
 rollback;
 
 \echo ''
+\echo '=== Clearing a day ==='
+
+begin;
+set local role authenticated;
+select public.act_as('a0000000-0000-0000-0000-000000000003');
+do $$
+declare n int;
+begin
+  -- Regression: articles_delete_admin existed but DELETE was never granted to
+  -- `authenticated`, so the statement failed with "permission denied" before
+  -- any policy was consulted. A content creator must now be refused by the
+  -- policy - zero rows - rather than by a missing grant.
+  delete from public.articles where status = 'pending';
+  get diagnostics n = row_count;
+  perform public.assert(n = 0, 'content creator cannot delete articles');
+end;
+$$;
+rollback;
+
+begin;
+set local role authenticated;
+select public.act_as('a0000000-0000-0000-0000-000000000002');
+do $$
+declare n int;
+begin
+  delete from public.articles where status = 'pending';
+  get diagnostics n = row_count;
+  perform public.assert(n = 0, 'approver cannot delete articles');
+end;
+$$;
+rollback;
+
+begin;
+set local role authenticated;
+select public.act_as('a0000000-0000-0000-0000-000000000001');
+do $$
+declare n int;
+begin
+  delete from public.articles where status = 'pending';
+  get diagnostics n = row_count;
+  perform public.assert(n = 1, 'admin can delete a pending article');
+
+  select count(*) into n from public.articles where status in ('approved', 'declined');
+  perform public.assert(n = 2, 'decided articles are untouched by the delete');
+end;
+$$;
+rollback;
+
+\echo ''
 \echo '=== Signup ==='
 
 do $$
