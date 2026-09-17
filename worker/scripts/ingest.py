@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -45,6 +46,12 @@ def parse_args() -> argparse.Namespace:
         const="never",
         dest="review",
         help="Collect without AI screening. Same as --review never.",
+    )
+    parser.add_argument(
+        "--for-date",
+        metavar="YYYY-MM-DD",
+        default=None,
+        help="Keep only articles that appeared on this day.",
     )
     parser.add_argument("--log-level", default=None, help="DEBUG, INFO, WARNING, ERROR.")
     return parser.parse_args()
@@ -120,8 +127,13 @@ def main() -> int:
         return check(settings)
 
     try:
+        for_date = date.fromisoformat(args.for_date) if args.for_date else None
         stats = run_ingest(
-            settings, limit=args.limit, dry_run=args.dry_run, review=args.review
+            settings,
+            limit=args.limit,
+            dry_run=args.dry_run,
+            review=args.review,
+            for_date=for_date,
         )
     except (SupabaseError, LLMError) as exc:
         print(f"\n✗ {exc}\n", file=sys.stderr)

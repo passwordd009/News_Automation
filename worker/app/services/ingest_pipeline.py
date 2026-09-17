@@ -7,7 +7,9 @@ lands in the review queue; every editorial decision after that is a human's.
 from __future__ import annotations
 
 import logging
+from datetime import date as date_type, datetime, time, timedelta
 from typing import Iterable
+from zoneinfo import ZoneInfo
 
 from app.config import FeedConfig, Settings, get_settings
 from app.database.supabase_store import IngestStats, SupabaseStore, article_row
@@ -59,6 +61,29 @@ def deduplicate(
     return kept
 
 
+def day_bounds(day: date_type, timezone_name: str) -> tuple[datetime, datetime]:
+    """Midnight to midnight for ``day``, in the newsroom's timezone.
+
+    The dashboard groups articles into days of the editorial week, so the
+    worker has to agree with it about where a day starts — 00:00 in New York,
+    not in UTC.
+    """
+    zone = ZoneInfo(timezone_name)
+    start = datetime.combine(day, time.min, tzinfo=zone)
+    return start, start + timedelta(days=1)
+
+
+def published_on(candidate: ArticleCandidate, day: date_type, timezone_name: str) -> bool:
+    """Whether a candidate belongs to ``day``.
+
+    Uses the publication time when the feed gave one, and the discovery time
+    when it did not — the same rule as the database's effective_date column.
+    """
+    start, end = day_bounds(day, timezone_name)
+    moment = candidate.published_at or candidate.discovered_at
+    return start <= moment < end
+
+
 def run_ingest(
     settings: Settings | None = None,
     *,
@@ -68,6 +93,7 @@ def run_ingest(
     limit: int | None = None,
     dry_run: bool = False,
     review: str = "auto",
+    for_date: date_type | None = None,
 ) -> IngestStats:
     """One full ingestion run.
 
@@ -81,6 +107,11 @@ def run_ingest(
                 queue.
     ``auto``    review when the model is there, collect without it when it is
                 not. The default, so a click still produces articles.
+
+    ``for_date`` keeps only the articles that appeared on that day, for the
+    per-day collection the review queue offers. Feeds only carry their recent
+    entries, so a day already scrolled off the end of every feed yields
+    nothing — that is a property of RSS, not a failure here.
     """
     settings = settings or get_settings()
     store = store or SupabaseStore(settings=settings)
@@ -112,6 +143,14 @@ def run_ingest(
 
     candidates = collect_articles(settings, feeds)
     stats.fetched = len(candidates)
+
+    if for_date is not None:
+        before = len(candidates)
+        candidates = [c for c in candidates if published_on(c, for_date, settings.timezone)]
+        logger.info(
+            "%d of %d fetched article(s) appeared on %s.", len(candidates), before, for_date
+        )
+
     if limit is not None:
         candidates = candidates[:limit]
 

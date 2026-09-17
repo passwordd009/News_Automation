@@ -84,14 +84,27 @@ export function isRunning(): boolean {
   return inFlight !== null;
 }
 
-export async function runWorker(limit?: number | null): Promise<WorkerRun> {
+export async function runWorker(
+  limit?: number | null,
+  forDate?: string | null,
+): Promise<WorkerRun> {
   if (inFlight) return inFlight;
 
-  inFlight = execute(limit).finally(() => {
+  inFlight = execute(limit, forDate).finally(() => {
     inFlight = null;
   }) as Promise<WorkerRun>;
 
   return inFlight;
+}
+
+/** A day the worker will accept: YYYY-MM-DD and nothing else. */
+export function validateDate(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  const text = String(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(text))) {
+    throw new RangeError("date must be YYYY-MM-DD.");
+  }
+  return text;
 }
 
 export function validateLimit(value: unknown): number | null {
@@ -103,7 +116,7 @@ export function validateLimit(value: unknown): number | null {
   return parsed;
 }
 
-async function execute(limit?: number | null): Promise<WorkerRun> {
+async function execute(limit?: number | null, forDate?: string | null): Promise<WorkerRun> {
   const started = Date.now();
   const script = scriptPath();
 
@@ -121,6 +134,7 @@ async function execute(limit?: number | null): Promise<WorkerRun> {
   // a command line, and the only caller value is a validated integer.
   const args = [script];
   if (limit) args.push("--limit", String(limit));
+  if (forDate) args.push("--for-date", forDate);
 
   const python = resolvePython();
 

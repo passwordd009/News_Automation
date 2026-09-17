@@ -46,6 +46,8 @@ export interface Article {
   source_type: string | null;
   published_at: string | null;
   fetched_at: string;
+  /** Generated: published_at, or fetched_at when the feed gave no date. */
+  effective_date: string;
   raw_description: string | null;
   article_text: string | null;
 
