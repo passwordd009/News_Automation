@@ -1,0 +1,59 @@
+# Render Blueprint for the Project Hestia dashboard.
+#
+# Only the dashboard runs here. The Python worker stays on GitHub Actions,
+# where the Ollama weights are restored from actions/cache between runs and a
+# public repository pays nothing for the minutes. Render Cron Jobs have no
+# persistent disk, so the same work there would re-download ~2GB per run.
+#
+# The collect button does not care where the dashboard is hosted: it is an
+# HTTPS call to api.github.com, so moving hosts changed no application code.
+#
+# Create with: Render dashboard -> New -> Blueprint, pointed at this repo.
+
+services:
+  - type: web
+    name: hestia-dashboard
+    runtime: node
+    # Always on. `free` is the alternative and costs nothing, but spins down
+    # after 15 minutes idle and takes about a minute to answer the next
+    # request, which reads as a broken page to anyone who was not expecting it.
+    plan: starter
+    region: oregon
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    # No -p flag: `next start` reads PORT from the environment and binds
+    # 0.0.0.0 by default, which is exactly Render's contract.
+    startCommand: npm start
+
+    # `/` is a redirect to /dashboard, which an unauthenticated health check
+    # would follow to /login anyway. Checking /login directly gets a 200
+    # instead of a 307 chain.
+    healthCheckPath: /login
+
+    autoDeploy: true
+
+    envVars:
+      # web/.nvmrc and engines.node both say 22; naming it here removes any
+      # question about which one Render reads.
+      - key: NODE_VERSION
+        value: "22"
+
+      # Set in the Render dashboard, never committed. The two NEXT_PUBLIC_
+      # values are public by design — they ship in the browser bundle, and Row
+      # Level Security is what protects the data behind them.
+      #
+      # They are also inlined at BUILD time, so changing either one needs a
+      # deploy, not a restart.
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+
+      # Server-side only, read at runtime: a restart is enough after changing
+      # it. Must never gain a NEXT_PUBLIC_ prefix.
+      - key: GITHUB_DISPATCH_TOKEN
+        sync: false
+
+      # SUPABASE_SECRET_KEY is deliberately absent. It bypasses RLS entirely
+      # and nothing under web/ reads it; it belongs in GitHub Actions secrets
+      # and worker/.env only.
