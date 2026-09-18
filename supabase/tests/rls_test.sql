@@ -392,5 +392,140 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------------------------
+-- Sending a decision back to the queue
+-- ---------------------------------------------------------------------------
+
+\echo ''
+\echo '=== Returning a decision to the queue ==='
+
+begin;
+set local role authenticated;
+select public.act_as('a0000000-0000-0000-0000-000000000002');
+do $$
+declare
+  target uuid;
+  who uuid;
+  whenever timestamptz;
+  why text;
+begin
+  select id into target from public.articles
+   where normalized_url = 'https://example.com/approved';
+
+  -- The seeded row is already approved, and the trigger only fires on a real
+  -- status change. Put it back in the queue first so the approval below is one.
+  update public.articles set status = 'pending' where id = target;
+
+  update public.articles set status = 'approved' where id = target;
+  select approved_by, approved_at into who, whenever
+    from public.articles where id = target;
+  perform public.assert(who is not null, 'approving stamps approved_by');
+  perform public.assert(whenever is not null, 'approving stamps approved_at');
+
+  update public.articles set status = 'pending' where id = target;
+  select approved_by, approved_at into who, whenever
+    from public.articles where id = target;
+  perform public.assert(who is null, 'returning to pending clears approved_by');
+  perform public.assert(whenever is null, 'returning to pending clears approved_at');
+
+  -- The same from a decline. A pending article must not still carry the
+  -- reason it was rejected, or the queue explains a decision nobody holds.
+  update public.articles set status = 'declined', decline_reason = 'Too local'
+   where id = target;
+  update public.articles set status = 'pending' where id = target;
+
+  select declined_by, declined_at, decline_reason into who, whenever, why
+    from public.articles where id = target;
+  perform public.assert(who is null, 'returning to pending clears declined_by');
+  perform public.assert(whenever is null, 'returning to pending clears declined_at');
+  perform public.assert(why is null, 'returning to pending clears decline_reason');
+end;
+$$;
+rollback;
+
+begin;
+set local role authenticated;
+select public.act_as('a0000000-0000-0000-0000-000000000003');
+do $$
+declare target uuid;
+begin
+  select id into target from public.articles
+   where normalized_url = 'https://example.com/approved';
+
+  update public.articles set status = 'pending' where id = target;
+  perform public.assert(
+    (select status from public.articles where id = target) = 'approved',
+    'a content creator cannot send an approved article back'
+  );
+end;
+$$;
+rollback;
+
+-- ---------------------------------------------------------------------------
+-- Role management
+-- ---------------------------------------------------------------------------
+
+\echo ''
+\echo '=== Role management ==='
+
+begin;
+set local role authenticated;
+select public.act_as('a0000000-0000-0000-0000-000000000001');
+do $$
+begin
+  update public.profiles set role = 'approver'
+   where id = 'a0000000-0000-0000-0000-000000000003';
+  perform public.assert(
+    (select role from public.profiles
+      where id = 'a0000000-0000-0000-0000-000000000003') = 'approver',
+    'an admin can change another user''s role'
+  );
+end;
+$$;
+rollback;
+
+begin;
+set local role authenticated;
+select public.act_as('a0000000-0000-0000-0000-000000000002');
+do $$
+begin
+  update public.profiles set role = 'admin'
+   where id = 'a0000000-0000-0000-0000-000000000003';
+  perform public.assert(
+    (select role from public.profiles
+      where id = 'a0000000-0000-0000-0000-000000000003') = 'content_creator',
+    'an approver cannot change roles'
+  );
+end;
+$$;
+rollback;
+
+begin;
+set local role authenticated;
+select public.act_as('a0000000-0000-0000-0000-000000000003');
+do $$
+begin
+  -- Stronger than a no-op: profiles_update_self_not_role has a WITH CHECK, so
+  -- self-promotion is rejected outright rather than matching zero rows.
+  begin
+    update public.profiles set role = 'admin'
+     where id = 'a0000000-0000-0000-0000-000000000003';
+    perform public.assert(false, 'a content creator cannot promote themselves');
+  exception when insufficient_privilege then
+    perform public.assert(true, 'a content creator cannot promote themselves');
+  end;
+
+  -- They may still edit their own profile, just not its role.
+  update public.profiles set full_name = 'Renamed'
+   where id = 'a0000000-0000-0000-0000-000000000003';
+  perform public.assert(
+    (select full_name from public.profiles
+      where id = 'a0000000-0000-0000-0000-000000000003') = 'Renamed',
+    'a content creator can still edit their own name'
+  );
+end;
+$$;
+rollback;
+
 \echo ''
 \echo 'All RLS and schema assertions passed.'

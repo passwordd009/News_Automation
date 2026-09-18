@@ -1,3 +1,4 @@
+import { ReturnToReviewButton } from "@/components/articles/ReturnToReviewButton";
 import { formatDate } from "@/lib/format";
 import type { Article } from "@/types/database";
 
@@ -7,8 +8,18 @@ import type { Article } from "@/types/database";
  * Ordered as §15 asks: topic, then title, then description, then why post,
  * then the source. A content creator reads top to bottom and has everything
  * they need to write the post.
+ *
+ * Reviewers also get a way back: reading the week as it will be posted is when
+ * a wrong call is most likely to be noticed, so the undo belongs here rather
+ * than only in the queue the story has already left.
  */
-export function ApprovedArticleCard({ article }: { article: Article }) {
+export function ApprovedArticleCard({
+  article,
+  canReturn = false,
+}: {
+  article: Article;
+  canReturn?: boolean;
+}) {
   return (
     <article className="border-l-2 border-accent-border pl-5 transition hover:border-accent">
       {article.topic && (
@@ -50,6 +61,8 @@ export function ApprovedArticleCard({ article }: { article: Article }) {
         </a>
         {article.published_at && <> · {formatDate(article.published_at)}</>}
       </p>
+
+      {canReturn && <ReturnToReviewButton articleId={article.id} />}
     </article>
   );
 }

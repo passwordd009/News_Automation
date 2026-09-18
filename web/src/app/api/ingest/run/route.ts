@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/auth/getCurrentProfile";
 import { can } from "@/lib/auth/permissions";
+import { getPendingCountsByDay } from "@/lib/articles/queries";
+import { newsroomToday } from "@/lib/week";
 import {
   DispatchError,
   dispatchAvailable,
@@ -55,6 +57,35 @@ export async function POST(request: Request) {
     date = validateDate(body?.date);
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+  }
+
+  // The two collection rules, enforced where they cannot be clicked past.
+  // The UI disables the button for both, but a disabled button is a suggestion.
+  if (date) {
+    const today = newsroomToday();
+    if (date !== today) {
+      return NextResponse.json(
+        {
+          error:
+            `Only today (${today}) can be collected. The feeds no longer carry ${date}, ` +
+            "so the run would take minutes and return nothing.",
+        },
+        { status: 409 },
+      );
+    }
+
+    const counts = await getPendingCountsByDay([date]);
+    const waiting = counts.pending[date] ?? 0;
+    if (waiting > 0) {
+      return NextResponse.json(
+        {
+          error:
+            `${waiting} article${waiting === 1 ? " is" : "s are"} already waiting on ${date}. ` +
+            "Decide on them, or clear the day, before collecting again.",
+        },
+        { status: 409 },
+      );
+    }
   }
 
   try {

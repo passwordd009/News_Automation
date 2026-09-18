@@ -10,23 +10,34 @@ import { useCollectRun } from "./useCollectRun";
 /**
  * Collect and clear, for one day.
  *
- * Clearing permanently deletes that day's undecided articles, so it asks
- * first and says exactly how many will go.
+ * Collecting is deliberately narrow: today only, and only into an empty day.
  *
- * Collecting hands the work to GitHub Actions and watches the run, because a
- * deployed dashboard has no Python and no model to run it against. The wait is
- * minutes rather than seconds; the page refreshes itself when the run lands.
+ * Today only, because a past day cannot be collected in any useful sense —
+ * feeds carry only their recent entries, so the request would run for minutes
+ * on a runner and return nothing. Offering it would be offering a
+ * disappointment.
+ *
+ * Empty only, because a second run over a day already holding articles adds
+ * almost nothing: deduplication drops everything already stored, so the usual
+ * result is several minutes of screening for zero new rows. Clearing the day
+ * first makes the intent explicit — start this day over — rather than hoping a
+ * re-run finds something.
+ *
+ * Both rules are re-checked in the API route. This component decides what to
+ * offer, not what is allowed.
  */
 export function DayActions({
   day,
   label,
   pendingCount,
+  isToday,
   collectConfigured,
   canClear,
 }: {
   day: string;
   label: string;
   pendingCount: number;
+  isToday: boolean;
   collectConfigured: boolean;
   canClear: boolean;
 }) {
@@ -36,6 +47,15 @@ export function DayActions({
   const [confirming, setConfirming] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Why the button is off, when it is. Null means it is available.
+  const blocked = !isToday
+    ? `Only today can be collected. ${label} has already passed, and the feeds no longer carry it.`
+    : pendingCount > 0
+      ? `${label} already holds ${pendingCount} undecided article${
+          pendingCount === 1 ? "" : "s"
+        }. Decide on them, or clear the day, before collecting again.`
+      : null;
 
   function clear() {
     setError(null);
@@ -87,11 +107,10 @@ export function DayActions({
             <button
               type="button"
               onClick={() => run.start({ date: day })}
-              disabled={run.busy || !collectConfigured}
-              title={collectConfigured ? undefined : "Collecting is not configured"}
+              disabled={run.busy || !collectConfigured || blocked !== null}
               className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:opacity-40"
             >
-              {run.busy ? "Collecting…" : `Collect ${label}'s news`}
+              {run.busy ? "Collecting…" : isToday ? "Collect today's news" : `Collect ${label}`}
             </button>
 
             {canClear && pendingCount > 0 && (
@@ -107,12 +126,17 @@ export function DayActions({
             {message && <span className="text-xs text-positive">{message}</span>}
           </div>
 
-          {collectConfigured ? (
-            <RunStatus run={run} />
-          ) : (
+          {!collectConfigured ? (
             <div className="mt-3">
               <CollectUnavailable />
             </div>
+          ) : (
+            <>
+              {blocked && run.state === "idle" && (
+                <p className="mt-3 text-xs leading-relaxed text-muted">{blocked}</p>
+              )}
+              <RunStatus run={run} />
+            </>
           )}
         </>
       )}

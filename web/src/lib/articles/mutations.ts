@@ -82,6 +82,41 @@ export async function declineArticle(
   return { ok: true };
 }
 
+/**
+ * Put a decided article back in the review queue.
+ *
+ * The decision is withdrawn, not recorded as reversed: a database trigger
+ * clears approved_by/approved_at (and the declined pair) when the status goes
+ * back to pending, so the queue never shows a story still claiming a decision
+ * that no longer stands.
+ *
+ * Available from /approved, where noticing a wrong call is most likely —
+ * a content creator reads the week there before writing the post.
+ */
+export async function returnToReview(articleId: string): Promise<ActionResult> {
+  const profile = await getCurrentProfile();
+  if (!profile) return { ok: false, error: "You are not signed in." };
+  // Undoing a decision is the same authority as making one.
+  if (!can(profile.role, "approveArticle")) {
+    return { ok: false, error: "Your role cannot change a decision." };
+  }
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("articles")
+    .update({ status: "pending" })
+    .eq("id", articleId)
+    .select("id");
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) return { ok: false, error: "That article could not be updated." };
+
+  revalidatePath("/review", "layout");
+  revalidatePath("/approved");
+  revalidatePath("/declined");
+  return { ok: true };
+}
+
 /** Retention window for declined articles. Configurable, not baked in (§9). */
 function deleteAfter(): string {
   const days = Number(process.env.DECLINED_RETENTION_DAYS ?? 21);

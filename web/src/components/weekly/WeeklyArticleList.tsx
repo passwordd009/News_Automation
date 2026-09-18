@@ -13,10 +13,13 @@ export function WeeklyArticleList({
   period,
   articles,
   emptyMessage,
+  canReturn = false,
 }: {
   period: WeeklyPeriod | null;
   articles: Article[];
   emptyMessage?: React.ReactNode;
+  /** Whether the reader may send a story back to the queue. */
+  canReturn?: boolean;
 }) {
   return (
     <div className="mx-auto max-w-2xl px-6 py-10">
@@ -30,7 +33,7 @@ export function WeeklyArticleList({
         <ol className="mt-10 space-y-10">
           {articles.map((article) => (
             <li key={article.id}>
-              <ApprovedArticleCard article={article} />
+              <ApprovedArticleCard article={article} canReturn={canReturn} />
             </li>
           ))}
         </ol>
