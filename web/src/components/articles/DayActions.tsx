@@ -4,11 +4,22 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { clearDay } from "@/lib/articles/mutations";
 
+export interface ScreeningStatus {
+  ready: boolean;
+  model: string;
+  hint?: string;
+}
+
 /**
  * Collect and clear, for one day.
  *
  * Clearing permanently deletes that day's undecided articles, so it asks
  * first and says exactly how many will go.
+ *
+ * The screening line is not decoration. Collection deliberately succeeds
+ * without the model, so "Reviewed: 0" in a green summary can mean either
+ * "screened and recommended nothing" or "never screened at all" — states worth
+ * telling apart before you spend an hour reading an unranked queue.
  */
 export function DayActions({
   day,
@@ -16,12 +27,14 @@ export function DayActions({
   pendingCount,
   canCollect,
   canClear,
+  screening,
 }: {
   day: string;
   label: string;
   pendingCount: number;
   canCollect: boolean;
   canClear: boolean;
+  screening?: ScreeningStatus | null;
 }) {
   const router = useRouter();
   const [busy, startTransition] = useTransition();
@@ -130,6 +143,23 @@ export function DayActions({
           )}
           {message && <span className="text-xs text-positive">{message}</span>}
         </div>
+      )}
+
+      {canCollect && screening && !confirming && (
+        <p className="mt-3 border-t border-border pt-3 text-xs text-muted">
+          {screening.ready ? (
+            <>
+              <span className="text-positive">AI screening on</span> · {screening.model}.
+              Collected articles arrive scored and ranked.
+            </>
+          ) : (
+            <>
+              <span className="font-medium text-foreground">AI screening off</span> —
+              articles will arrive unscored, in feed order.{" "}
+              {screening.hint && <span className="block mt-1">{screening.hint}</span>}
+            </>
+          )}
+        </p>
       )}
 
       {error && (
