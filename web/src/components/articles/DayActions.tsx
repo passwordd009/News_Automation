@@ -12,16 +12,16 @@ import { useCollectRun } from "./useCollectRun";
  *
  * Collecting is deliberately narrow: today only, and only into an empty day.
  *
- * Today only, because a past day cannot be collected in any useful sense —
- * feeds carry only their recent entries, so the request would run for minutes
- * on a runner and return nothing. Offering it would be offering a
- * disappointment.
+ * On any other day the button is not disabled, it is absent — a past day
+ * cannot be collected in any useful sense, because feeds carry only their
+ * recent entries, so the request would run for minutes on a runner and return
+ * nothing. A permanently greyed control is just clutter with an explanation
+ * attached. Clearing still applies, so that is all a past day offers.
  *
- * Empty only, because a second run over a day already holding articles adds
- * almost nothing: deduplication drops everything already stored, so the usual
- * result is several minutes of screening for zero new rows. Clearing the day
- * first makes the intent explicit — start this day over — rather than hoping a
- * re-run finds something.
+ * On today, a day that already holds articles keeps the button but disables
+ * it: a second run adds almost nothing, since deduplication drops everything
+ * already stored. There the explanation is worth having, because the block
+ * lifts as soon as the day is cleared or decided.
  *
  * Both rules are re-checked in the API route. This component decides what to
  * offer, not what is allowed.
@@ -48,11 +48,11 @@ export function DayActions({
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Why the button is off, when it is. Null means it is available.
-  const blocked = !isToday
-    ? `Only today can be collected. ${label} has already passed, and the feeds no longer carry it.`
-    : pendingCount > 0
-      ? `${label} already holds ${pendingCount} undecided article${
+  // Only today offers collection at all; on today, a populated day blocks it
+  // until it is cleared or worked through.
+  const blocked =
+    isToday && pendingCount > 0
+      ? `Today already holds ${pendingCount} undecided article${
           pendingCount === 1 ? "" : "s"
         }. Decide on them, or clear the day, before collecting again.`
       : null;
@@ -104,14 +104,16 @@ export function DayActions({
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => run.start({ date: day })}
-              disabled={run.busy || !collectConfigured || blocked !== null}
-              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:opacity-40"
-            >
-              {run.busy ? "Collecting…" : isToday ? "Collect today's news" : `Collect ${label}`}
-            </button>
+            {isToday && (
+              <button
+                type="button"
+                onClick={() => run.start({ date: day })}
+                disabled={run.busy || !collectConfigured || blocked !== null}
+                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:opacity-40"
+              >
+                {run.busy ? "Collecting…" : "Collect today's news"}
+              </button>
+            )}
 
             {canClear && pendingCount > 0 && (
               <button
@@ -126,7 +128,7 @@ export function DayActions({
             {message && <span className="text-xs text-positive">{message}</span>}
           </div>
 
-          {!collectConfigured ? (
+          {!isToday ? null : !collectConfigured ? (
             <div className="mt-3">
               <CollectUnavailable />
             </div>

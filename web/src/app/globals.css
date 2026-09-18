@@ -30,6 +30,12 @@
   /* The logo is black line art, so it needs inverting on a dark ground. */
   --logo-filter: none;
 
+  /* The brand panel. Light mode's sidebar is already white, so these match it
+     and the panel is invisible; dark mode is where it does the work. */
+  --brand-panel: var(--surface);
+  --brand-panel-text: var(--foreground);
+  --brand-panel-border: transparent;
+
   color-scheme: light;
 }
 
@@ -51,6 +57,13 @@
     --negative: #f87171;
 
     --logo-filter: invert(1);
+
+    /* The mark keeps its own light ground rather than being inverted: an
+       inverted logo is a different logo, and this one is the brand. Light
+       enough to read the black line art, warm enough not to glare. */
+    --brand-panel: #f2efea;
+    --brand-panel-text: #1c1917;
+    --brand-panel-border: #3f3a35;
 
     color-scheme: dark;
   }
@@ -74,6 +87,10 @@
 
   --logo-filter: invert(1);
 
+  --brand-panel: #f2efea;
+  --brand-panel-text: #1c1917;
+  --brand-panel-border: #3f3a35;
+
   color-scheme: dark;
 }
 
@@ -89,6 +106,9 @@
   --color-accent-border: var(--accent-border);
   --color-positive: var(--positive);
   --color-negative: var(--negative);
+  --color-brand-panel: var(--brand-panel);
+  --color-brand-panel-text: var(--brand-panel-text);
+  --color-brand-panel-border: var(--brand-panel-border);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
@@ -109,4 +129,11 @@ body {
 /* Black-on-transparent artwork stays legible on a dark ground. */
 .logo-mark {
   filter: var(--logo-filter);
+}
+
+/* Inside the brand panel the ground is already light, so the mark is shown as
+   drawn. Scoping the token rather than the filter means the fallback artwork
+   and the real PNG are treated the same. */
+.brand-panel {
+  --logo-filter: none;
 }
