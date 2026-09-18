@@ -42,7 +42,7 @@ export default async function ReviewPage({
   const selected = isValidDay(requestedDay, days) ? requestedDay : defaultDay(days);
   const selectedDay = days.find((d) => d.date === selected)!;
 
-  const canCollect = dispatchAvailable();
+  const collectConfigured = dispatchAvailable();
 
   const [{ articles }, counts] = await Promise.all([
     getReviewQueue(selected),
@@ -73,7 +73,7 @@ export default async function ReviewPage({
         day={selected}
         label={selectedDay.label}
         pendingCount={articles.length}
-        canCollect={canCollect}
+        collectConfigured={collectConfigured}
         canClear={profile.role === "admin"}
       />
 
@@ -81,9 +81,7 @@ export default async function ReviewPage({
         <div className="mt-8 rounded-lg border border-dashed border-border px-6 py-12 text-center">
           <p className="text-sm font-medium">Nothing from {selectedDay.label}.</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-            {canCollect
-              ? `Collect ${selectedDay.label}'s news above. Feeds only carry their recent entries, so a day that has scrolled off the end of every feed may return nothing.`
-              : "Run the worker to collect articles."}
+            {`Collect ${selectedDay.label}'s news above. Feeds only carry their recent entries, so a day that has scrolled off the end of every feed may return nothing.`}
           </p>
         </div>
       ) : (
