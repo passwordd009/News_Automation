@@ -46,13 +46,25 @@ if the runner turns out too slow.
 Today you run `ingest.py` yourself, or press the button. In production
 something has to do it daily, and rotate the week on Monday at noon.
 
-### 3. The button shells out to a local process
+### 3. ~~The button shells out to a local process~~ — solved
 
-`/api/ingest/run` runs `python worker/scripts/ingest.py` as a subprocess. On
-Vercel there is no Python and no worker directory, so the button cannot work as
-written. It hides itself (`workerAvailable()` returns false when the script is
-missing), so the deployed app degrades quietly rather than showing a broken
-control — but you would lose the button.
+`/api/ingest/run` used to run `python worker/scripts/ingest.py` as a subprocess,
+which a deployed dashboard cannot do: no Python, no worker directory, no model.
+
+**It now dispatches the ingest workflow instead** and polls the run to
+completion, refreshing the queue when it lands. The subprocess path is gone
+rather than kept as a fallback — two ways to collect meant local behaviour that
+production could not reproduce, and a screening step that was required in one
+and optional in the other.
+
+Consequences worth knowing:
+
+- A click takes **minutes**, not seconds. The UI shows run progress and links
+  to the log.
+- Collection now always runs with `--review require`, so an unreachable model
+  fails the run instead of filing a day unscored.
+- The button is hidden unless `GITHUB_DISPATCH_TOKEN` is set. Everything else
+  in the dashboard works without it.
 
 ---
 
@@ -162,12 +174,35 @@ timing out.
 | 1 | ~~Token auth for a networked Ollama~~ | ✅ done |
 | 2 | ~~GitHub Actions: daily ingest, Monday-noon rotation~~ | ✅ done |
 | 3 | ~~Run the model on the runner — no host to stand up~~ | ✅ done |
-| 4 | Add the Supabase secrets, then run each workflow manually once | you |
-| 5 | Point the button at `workflow_dispatch` instead of a local process | step 4 |
-| 6 | Deploy the dashboard to Vercel | — |
+| 4 | ~~Point the button at `workflow_dispatch` instead of a local process~~ | ✅ done |
+| 5 | Add the Supabase secrets, then run each workflow manually once | you |
+| 6 | Deploy the dashboard to Vercel, with the dispatch token | step 5 |
 | 7 | Harden: rotate keys, confirm RLS in production, Supabase auth settings | — |
 
-Steps 6 and 7 are independent and can go first.
+### The dispatch token
+
+The button needs a **fine-grained** personal access token, scoped to this
+repository only, with exactly one permission:
+
+| Permission | Level |
+|---|---|
+| **Actions** | **Read and write** |
+| Metadata | Read (added automatically) |
+
+Set it as `GITHUB_DISPATCH_TOKEN` in `web/.env.local` locally and in Vercel's
+environment variables. No `NEXT_PUBLIC_` prefix — that would ship it to the
+browser.
+
+**Do not grant `Workflows` or `Contents: write`.** `ingest.yml` runs with
+`SUPABASE_SECRET_KEY` in its environment, and both of those permissions are a
+path to editing what that workflow does — directly, or via a pushed branch.
+`Actions: write` can only run the workflow as already committed, which is the
+entire reason this token is safe to hold. The dispatch `ref` is pinned in code
+(`GITHUB_DISPATCH_REF`, default `main`) and never read from the request.
+
+Rotate or revoke it at Settings → Developer settings → Personal access tokens.
+Nothing else in the system depends on it: the daily schedule uses Actions'
+own credentials, not this token.
 
 ### Secrets and variables
 

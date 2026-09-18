@@ -23,6 +23,22 @@ on:
         description: "Review at most this many new articles (blank = all)"
         required: false
         type: string
+      date:
+        description: "Keep only articles that appeared on this day (YYYY-MM-DD, blank = the whole lookback window)"
+        required: false
+        type: string
+      request_id:
+        description: "Set by the dashboard so it can find this run. Leave blank when running by hand."
+        required: false
+        type: string
+
+# The dispatch endpoint returns 204 with no body, so the dashboard cannot learn
+# the run's id from the response. Stamping the request id into the run name
+# gives it something to match on — far more reliable than "the newest run",
+# which races with the daily schedule and with a second click.
+run-name: >-
+  Collect ${{ inputs.date && format('for {0}', inputs.date) || 'latest' }}
+  ${{ inputs.request_id && format('[{0}]', inputs.request_id) || '' }}
 
 concurrency:
   # Two collections at once would duplicate every fetch and race on inserts.
@@ -146,14 +162,30 @@ jobs:
         # as raw text before the shell sees it, so anything in it executes.
         env:
           LIMIT: ${{ inputs.limit }}
+          FOR_DATE: ${{ inputs.date }}
         run: |
-          start=$(date +%s)
-          if [ -z "$LIMIT" ]; then
-            python worker/scripts/ingest.py --review require
-          elif printf '%s' "$LIMIT" | grep -Eq '^[0-9]+$'; then
-            python worker/scripts/ingest.py --review require --limit "$LIMIT"
-          else
-            echo "limit must be a whole number, got: $LIMIT" >&2
-            exit 1
+          set -euo pipefail
+          args="--review require"
+
+          if [ -n "${LIMIT:-}" ]; then
+            printf '%s' "$LIMIT" | grep -Eq '^[0-9]+$' || {
+              echo "limit must be a whole number, got: $LIMIT" >&2
+              exit 1
+            }
+            args="$args --limit $LIMIT"
           fi
+
+          # Validated here as well as in the dashboard: a workflow can also be
+          # dispatched by hand from the Actions tab, where nothing checked it.
+          if [ -n "${FOR_DATE:-}" ]; then
+            printf '%s' "$FOR_DATE" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' || {
+              echo "date must be YYYY-MM-DD, got: $FOR_DATE" >&2
+              exit 1
+            }
+            args="$args --for-date $FOR_DATE"
+          fi
+
+          start=$(date +%s)
+          # shellcheck disable=SC2086  # args is built from validated tokens only
+          python worker/scripts/ingest.py $args
           echo "Run took $(( ($(date +%s) - start) / 60 )) minutes."
