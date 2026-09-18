@@ -1,13 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { joinName } from "@/lib/auth/name";
 
 /**
  * Only this part needs to be a client component: it reads `?next=` and talks
  * to Supabase. The page shell around it stays on the server, so the logo and
  * heading render immediately instead of waiting for JavaScript.
+ *
+ * Signing up collects a name because that is the only moment it is free to
+ * ask. `handle_new_user()` already copies `full_name` out of the signup's user
+ * metadata, so sending it here is all that was ever missing — it is why the
+ * Users table showed a column of dashes.
  */
 export function LoginForm() {
   const router = useRouter();
@@ -16,6 +23,8 @@ export function LoginForm() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -30,7 +39,11 @@ export function LoginForm() {
     const supabase = createClient();
 
     if (mode === "signup") {
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: { data: { full_name: joinName(firstName, lastName) } },
+      });
       setBusy(false);
       if (error) return setError(error.message);
       // New accounts are content_creator by default; an admin promotes them.
@@ -47,11 +60,45 @@ export function LoginForm() {
     router.refresh();
   }
 
+  const inputClass =
+    "mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm";
+
   return (
     <form
       onSubmit={handleSubmit}
       className="rounded-lg border border-border bg-surface p-6 shadow-sm"
     >
+      {mode === "signup" && (
+        <div className="mb-4 grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium" htmlFor="firstName">
+              First name
+            </label>
+            <input
+              id="firstName"
+              type="text"
+              autoComplete="given-name"
+              value={firstName}
+              onChange={(e) => setFirstName(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium" htmlFor="lastName">
+              Last name
+            </label>
+            <input
+              id="lastName"
+              type="text"
+              autoComplete="family-name"
+              value={lastName}
+              onChange={(e) => setLastName(e.target.value)}
+              className={inputClass}
+            />
+          </div>
+        </div>
+      )}
+
       <label className="block text-sm font-medium" htmlFor="email">
         Email
       </label>
@@ -62,7 +109,7 @@ export function LoginForm() {
         autoComplete="email"
         value={email}
         onChange={(e) => setEmail(e.target.value)}
-        className="mt-1.5 mb-4 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+        className={`${inputClass} mb-4`}
       />
 
       <label className="block text-sm font-medium" htmlFor="password">
@@ -76,8 +123,17 @@ export function LoginForm() {
         autoComplete={mode === "signup" ? "new-password" : "current-password"}
         value={password}
         onChange={(e) => setPassword(e.target.value)}
-        className="mt-1.5 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+        className={inputClass}
       />
+
+      {mode === "signin" && (
+        <Link
+          href="/forgot-password"
+          className="mt-2 block text-right text-xs text-muted underline underline-offset-4 hover:text-accent"
+        >
+          Forgot your password?
+        </Link>
+      )}
 
       {error && (
         <p role="alert" className="mt-4 text-sm text-negative">

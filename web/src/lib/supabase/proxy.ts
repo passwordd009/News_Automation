@@ -47,7 +47,16 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const { pathname } = request.nextUrl;
-  const isPublic = pathname === "/login" || pathname.startsWith("/auth");
+
+  // Recovery has to work for someone who cannot sign in — that is the whole
+  // point of it — so both pages are reachable signed out. /reset-password is
+  // usually reached *with* a session, the one the recovery link established,
+  // but it must also render for someone whose link expired so it can say so.
+  const isPublic =
+    pathname === "/login" ||
+    pathname === "/forgot-password" ||
+    pathname === "/reset-password" ||
+    pathname.startsWith("/auth");
   const isApi = pathname.startsWith("/api/");
 
   if (!user && !isPublic) {

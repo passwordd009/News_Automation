@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentProfile } from "@/lib/auth/getCurrentProfile";
 import { isValidRole, type Role } from "@/lib/auth/permissions";
+import { joinName } from "@/lib/auth/name";
 
 export interface RoleResult {
   ok: boolean;
@@ -45,6 +46,38 @@ export async function setUserRole(userId: string, role: string): Promise<RoleRes
   if (error) return { ok: false, error: error.message };
   if (!data?.length) return { ok: false, error: "That account could not be updated." };
 
+  revalidatePath("/admin/users");
+  return { ok: true };
+}
+
+/**
+ * Set your own name.
+ *
+ * `profiles_update_self_not_role` is the policy doing the work: it permits
+ * updating your own row while its WITH CHECK forbids the role changing, so
+ * this cannot be turned into a promotion by a crafted request. The RLS suite
+ * asserts both halves.
+ */
+export async function updateMyName(
+  firstName: string,
+  lastName: string,
+): Promise<RoleResult> {
+  const profile = await getCurrentProfile();
+  if (!profile) return { ok: false, error: "You are not signed in." };
+
+  const fullName = joinName(firstName, lastName);
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("profiles")
+    .update({ full_name: fullName })
+    .eq("id", profile.id)
+    .select("id");
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.length) return { ok: false, error: "Your profile could not be updated." };
+
+  revalidatePath("/account");
   revalidatePath("/admin/users");
   return { ok: true };
 }

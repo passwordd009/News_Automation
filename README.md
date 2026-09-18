@@ -153,6 +153,16 @@ logo.
 
 Open http://localhost:3000, create your account, then run `seed_admin.sql`.
 
+Signing up asks for a first and last name, which the signup trigger stores as
+`profiles.full_name`. An existing account can set one later from **your
+account** — the email address in the sidebar footer links there.
+
+**Forgot your password?** on the sign-in form emails a recovery link. It needs
+the Supabase redirect allow-list to include `<origin>/auth/callback`, and
+Supabase's built-in sender only reaches project team members at 2 messages an
+hour — `docs/DEPLOYMENT.md` step 7 covers both. Locally, the Supabase dashboard
+(Authentication → Users → ⋯ → Send password recovery) is the faster route.
+
 ### Collecting from the dashboard
 
 **Collect new articles** appears on the dashboard, and `Collect <day>'s news` on
