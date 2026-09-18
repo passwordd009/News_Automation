@@ -23,6 +23,15 @@ export async function getActivePeriod(): Promise<WeeklyPeriod | null> {
 export interface ReviewQueue {
   period: WeeklyPeriod | null;
   articles: Article[];
+  /**
+   * Why the read failed, when it did.
+   *
+   * A failed query used to return an empty list, which the page rendered as
+   * "nothing waiting" — a missing column and a quiet week looked identical,
+   * and the real reason went to the server console where nobody was looking.
+   * Callers are expected to show this.
+   */
+  error?: string;
 }
 
 /**
@@ -61,7 +70,7 @@ export async function getReviewQueue(day?: string): Promise<ReviewQueue> {
 
   if (error) {
     console.error("Could not load the review queue:", error.message);
-    return { period, articles: [] };
+    return { period, articles: [], error: explainQueryError(error.message) };
   }
 
   return { period, articles: data ?? [] };
@@ -114,10 +123,39 @@ export async function getPeriod(periodId: string): Promise<WeeklyPeriod | null> 
   return data ?? null;
 }
 
-/** How many articles are waiting on each day of the week. */
-export async function getPendingCountsByDay(days: string[]): Promise<Record<string, number>> {
+/**
+ * Turn a PostgREST error into something a person can act on.
+ *
+ * The one that actually happens is a migration that has not been applied: the
+ * column the day tabs group on does not exist yet, so every day-filtered read
+ * fails while the unfiltered ones keep working.
+ */
+export function explainQueryError(message: string): string {
+  if (/effective_date/.test(message)) {
+    return (
+      "The articles table has no effective_date column, so the day tabs cannot " +
+      "read anything. Apply the migration supabase/migrations/" +
+      "20260916000001_article_effective_date.sql (supabase db push), then reload."
+    );
+  }
+  if (/permission denied/i.test(message)) {
+    return `The database refused the read: ${message}. Check the RLS policies are applied.`;
+  }
+  return `The database rejected the query: ${message}`;
+}
+
+export interface DayCounts {
+  /** Everything awaiting a decision, per day. */
+  pending: Record<string, number>;
+  /** The subset the AI recommended, per day. */
+  recommended: Record<string, number>;
+  error?: string;
+}
+
+/** How many articles are waiting on each day of the week, and how many are recommended. */
+export async function getPendingCountsByDay(days: string[]): Promise<DayCounts> {
   const supabase = await createClient();
-  if (days.length === 0) return {};
+  if (days.length === 0) return { pending: {}, recommended: {} };
 
   // One query for the whole span, bucketed here — seven round trips to count
   // seven numbers would be wasteful.
@@ -126,20 +164,26 @@ export async function getPendingCountsByDay(days: string[]): Promise<Record<stri
 
   const { data, error } = await supabase
     .from("articles")
-    .select("effective_date")
+    .select("effective_date, ai_recommended")
     .in("status", ["pending", "reconsideration_requested"])
     .gte("effective_date", start)
     .lt("effective_date", end)
-    .returns<{ effective_date: string }[]>();
+    .returns<{ effective_date: string; ai_recommended: boolean | null }[]>();
 
-  if (error || !data) return {};
+  if (error) {
+    console.error("Could not count the week:", error.message);
+    return { pending: {}, recommended: {}, error: explainQueryError(error.message) };
+  }
 
-  const counts: Record<string, number> = {};
+  const pending: Record<string, number> = {};
+  const recommended: Record<string, number> = {};
   for (const day of days) {
     const range = dayRange(day);
-    counts[day] = data.filter(
+    const onDay = (data ?? []).filter(
       (row) => row.effective_date >= range.start && row.effective_date < range.end,
-    ).length;
+    );
+    pending[day] = onDay.length;
+    recommended[day] = onDay.filter((row) => row.ai_recommended).length;
   }
-  return counts;
+  return { pending, recommended };
 }

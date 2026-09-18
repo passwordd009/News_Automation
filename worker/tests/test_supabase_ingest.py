@@ -315,8 +315,12 @@ def test_dry_run_writes_nothing(monkeypatch):
     assert fake.inserted == []
 
 
-def test_articles_the_model_could_not_review_are_kept_not_dropped(monkeypatch):
-    """Losing a story silently is worse than queueing it unscored."""
+def test_articles_the_model_could_not_review_are_dropped(monkeypatch):
+    """An unscorable article cannot be ranked, so it is not worth queueing.
+
+    It is not lost: the feed still carries it, and the next run re-collects it
+    once the model is answering again.
+    """
     _feeds(monkeypatch, [_candidate()])
     fake = FakeSupabase(periods=[ACTIVE_PERIOD])
     store = SupabaseStore(client=fake, settings=Settings())
@@ -324,8 +328,22 @@ def test_articles_the_model_could_not_review_are_kept_not_dropped(monkeypatch):
     stats = run_ingest(Settings(), store=store, reviewer=_StubReviewer(fail=True))
 
     assert stats.review_failed == 1
+    assert stats.inserted == 0
+    assert fake.inserted == []
+
+
+def test_review_never_still_stores_unscored(monkeypatch):
+    """--no-review is an explicit request for unscored articles."""
+    _feeds(monkeypatch, [_candidate()])
+    fake = FakeSupabase(periods=[ACTIVE_PERIOD])
+    store = SupabaseStore(client=fake, settings=Settings())
+
+    stats = run_ingest(Settings(), store=store, review="never")
+
     assert stats.inserted == 1
-    assert "AI review failed" in fake.inserted[0]["ai_rejection_reason"]
+    assert stats.reviewed == 0
+    assert stats.skipped_unscored == 0
+    assert fake.inserted[0]["status"] == "pending"
 
 
 def test_ingest_opens_a_week_when_none_is_active(monkeypatch):
@@ -386,8 +404,12 @@ def test_require_stops_rather_than_filing_a_day_unscored(monkeypatch):
     assert fake.inserted == []
 
 
-def test_a_missing_model_still_collects_by_default(monkeypatch):
-    """The button has to produce articles even with no model running."""
+def test_a_missing_model_stores_nothing_and_says_so(monkeypatch):
+    """Collecting without a model would fill the queue with unrankable stories.
+
+    The run still succeeds — it just reports that everything went unscored,
+    rather than quietly filing a day of bare headlines.
+    """
     _feeds(monkeypatch, [_candidate("A story", "https://example.com/1")])
     _dead_model(monkeypatch)
     fake = FakeSupabase(periods=[ACTIVE_PERIOD])
@@ -395,13 +417,11 @@ def test_a_missing_model_still_collects_by_default(monkeypatch):
 
     stats = run_ingest(Settings(), store=store)  # review="auto"
 
-    assert stats.inserted == 1
+    assert stats.inserted == 0
     assert stats.reviewed == 0
-    row = fake.inserted[0]
-    assert row["status"] == "pending"
-    # Nothing is invented for an article the model never saw.
-    assert "overall_score" not in row
-    assert row["ai_recommended"] is False
+    assert stats.skipped_unscored == 1
+    assert fake.inserted == []
+    assert "Unscored (dropped): 1" in stats.format_summary()
 
 
 def test_review_never_does_not_touch_the_model(monkeypatch):

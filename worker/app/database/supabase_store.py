@@ -46,6 +46,9 @@ class IngestStats:
     review_failed: int = 0
     recommended: int = 0
     inserted: int = 0
+    #: Collected but never scored, so never stored. Only non-zero when the
+    #: model was unavailable or refused an article.
+    skipped_unscored: int = 0
 
     @property
     def duplicates(self) -> int:
@@ -56,6 +59,7 @@ class IngestStats:
             f"Fetched: {self.fetched}   Duplicates: {self.duplicates}   "
             f"Reviewed: {self.reviewed}   Recommended: {self.recommended}   "
             f"Inserted: {self.inserted}"
+            + (f"   Unscored (dropped): {self.skipped_unscored}" if self.skipped_unscored else "")
             + (f"   Review failures: {self.review_failed}" if self.review_failed else "")
         )
 
