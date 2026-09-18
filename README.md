@@ -99,18 +99,38 @@ both — which is how the scheduled job runs with no file at all.
 
 ### 3. The model
 
+Install Ollama from [ollama.com](https://ollama.com), then pull the model once:
+
 ```bash
-ollama serve
-ollama pull llama3.1
+ollama pull llama3.2:3b
 ```
 
-Any Ollama model works; set `OLLAMA_MODEL`. The provider sits behind an
-interface, so Claude, OpenAI or Gemini can replace it by registering a client
-in `worker/app/llm/client.py` — nothing else changes.
+On macOS and Windows the installer leaves a background service that starts with
+your machine, so there is no `ollama serve` to remember. On Linux the package
+installs a systemd unit that does the same; if you are running the tarball by
+hand, start it with `ollama serve`.
 
-For production the model moves to a small server, since GitHub's runners cannot
-reach your laptop. `docs/OLLAMA_VM.md` is the runbook and
-`scripts/setup_ollama_vm.sh` provisions it.
+**This is what makes the dashboard's collect button screen articles.** The
+button runs the worker with `--review auto`: it screens when the model answers
+and collects without it when it does not, so a click always produces articles.
+The review page says which of the two you are about to get, above the button —
+"AI screening on" or "off", because an unscored queue and a screened queue that
+recommended nothing look identical otherwise.
+
+Check it end to end with:
+
+```bash
+python worker/scripts/ingest.py --check
+```
+
+The scheduled GitHub Actions run installs Ollama on the runner and pulls the
+same model from cache, so nothing needs to be hosted between runs. Setting the
+`OLLAMA_URL` secret points it at your own instance instead —
+`docs/OLLAMA_VM.md` is that runbook, and it is optional.
+
+Any Ollama model works; set `OLLAMA_MODEL` in `worker/.env`. The provider sits
+behind an interface, so Claude, OpenAI or Gemini can replace it by registering a
+client in `worker/app/llm/client.py` — nothing else changes.
 
 ### 4. The dashboard
 

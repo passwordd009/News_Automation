@@ -129,7 +129,9 @@ class Settings:
     # LLM — read here so nothing else needs to know which provider is in use
     llm_provider: str = "ollama"
     ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "llama3.1"
+    # The same model the scheduled job pulls. Two defaults would mean two sets
+    # of setup instructions, and a local queue scored differently from CI's.
+    ollama_model: str = "llama3.2:3b"
     # Only needed when Ollama is reachable over a network: it has no auth of
     # its own, so a hosted instance sits behind a proxy that requires this.
     ollama_auth_token: str = ""
@@ -249,7 +251,7 @@ def get_settings() -> Settings:
         lookback_days=_env_int("LOOKBACK_DAYS", 8),
         llm_provider=_env_str("LLM_PROVIDER", "ollama"),
         ollama_url=_env_str("OLLAMA_URL", "http://localhost:11434"),
-        ollama_model=_env_str("OLLAMA_MODEL", "llama3.1"),
+        ollama_model=_env_str("OLLAMA_MODEL", "llama3.2:3b"),
         ollama_auth_token=_env_str("OLLAMA_AUTH_TOKEN", ""),
         llm_timeout=_env_int("LLM_TIMEOUT", 120),
         llm_temperature=_env_float("LLM_TEMPERATURE", 0.2),

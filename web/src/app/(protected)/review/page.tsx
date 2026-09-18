@@ -8,6 +8,7 @@ import { WeekDayTabs } from "@/components/weekly/WeekDayTabs";
 import { formatPeriodRange } from "@/lib/format";
 import { defaultDay, isValidDay, weekDays } from "@/lib/week";
 import { workerAvailable } from "@/lib/worker/localWorker";
+import { getModelStatus } from "@/lib/worker/modelStatus";
 
 export const metadata = { title: "Review · Project Hestia" };
 
@@ -42,9 +43,13 @@ export default async function ReviewPage({
   const selected = isValidDay(requestedDay, days) ? requestedDay : defaultDay(days);
   const selectedDay = days.find((d) => d.date === selected)!;
 
-  const [{ articles }, counts] = await Promise.all([
+  const canCollect = workerAvailable();
+
+  const [{ articles }, counts, screening] = await Promise.all([
     getReviewQueue(selected),
     getPendingCountsByDay(days.filter((d) => !d.isFuture).map((d) => d.date)),
+    // Only worth probing where a click would actually run the worker.
+    canCollect ? getModelStatus() : Promise.resolve(null),
   ]);
 
   const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
@@ -71,15 +76,16 @@ export default async function ReviewPage({
         day={selected}
         label={selectedDay.label}
         pendingCount={articles.length}
-        canCollect={workerAvailable()}
+        canCollect={canCollect}
         canClear={profile.role === "admin"}
+        screening={screening}
       />
 
       {articles.length === 0 ? (
         <div className="mt-8 rounded-lg border border-dashed border-border px-6 py-12 text-center">
           <p className="text-sm font-medium">Nothing from {selectedDay.label}.</p>
           <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-            {workerAvailable()
+            {canCollect
               ? `Collect ${selectedDay.label}'s news above. Feeds only carry their recent entries, so a day that has scrolled off the end of every feed may return nothing.`
               : "Run the worker to collect articles."}
           </p>
