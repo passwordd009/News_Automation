@@ -80,9 +80,13 @@ export function AppSidebar({
       </ul>
 
       <div className="mt-auto hidden border-t border-border px-2 pt-4 sm:block">
-        <p className="truncate text-xs text-muted" title={email ?? undefined}>
+        <Link
+          href="/account"
+          title={email ?? undefined}
+          className="block truncate text-xs text-muted underline-offset-4 transition hover:text-accent hover:underline"
+        >
           {email}
-        </p>
+        </Link>
         <p className="mt-0.5 text-xs font-medium text-accent">{ROLE_LABELS[role]}</p>
         <div className="mt-3">
           <ThemeToggle />

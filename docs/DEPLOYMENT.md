@@ -290,13 +290,39 @@ Two details that are easy to get wrong:
 
 ### 7. Supabase auth settings
 
-**Authentication → URL Configuration:** set the Site URL to your Render domain
-(`https://<service>.onrender.com`, or your custom domain) and add it to the
-redirect allow-list, or email links point at localhost.
+**Authentication → URL Configuration.** Set the Site URL to your Render domain
+(`https://<service>.onrender.com`, or your custom domain), and add
+`https://<your-domain>/auth/callback` to the redirect allow-list.
 
-**Authentication → Providers → Email:** decide on email confirmation, and decide
-whether signup stays open. Anyone who signs up becomes a Content Creator and can
-read approved and declined articles.
+Both are required for password recovery. Supabase refuses a `redirectTo` that
+is not on the list, so the reset email either fails to send or arrives pointing
+at localhost.
+
+**Authentication → Emails → SMTP Settings: configure a custom provider before
+anyone but you relies on this.** Supabase's built-in sender is capped at **2
+messages per hour** and **only delivers to addresses on the project's team**.
+Your own address qualifies; a new editor's does not, and their reset link will
+simply never arrive with nothing in the UI to say why. Any transactional
+provider works.
+
+**Optional: make reset links work across devices.** By default Supabase sends
+a PKCE link, which carries a verifier stored in a cookie — so a link requested
+on a laptop cannot be opened on a phone. Editing **Authentication → Email
+Templates → Reset Password** to use `{{ .TokenHash }}` instead of
+`{{ .ConfirmationURL }}` removes that constraint:
+
+```
+<a href="{{ .SiteURL }}/auth/callback?token_hash={{ .TokenHash }}&type=recovery&next=/reset-password">
+  Set a new password
+</a>
+```
+
+`/auth/callback` accepts both shapes, so this can be changed at any time and
+links already sent keep working.
+
+**Email confirmation and open signup.** Decide whether new accounts must
+confirm their address, and whether signup stays open at all — anyone who signs
+up becomes a Content Creator and can read approved and declined articles.
 
 ### 8. Harden, before real data
 
@@ -319,6 +345,10 @@ In order, after deploying:
    it. Minutes, not seconds.
 4. Approve something, open **Approved**, and send it back.
 5. Open **Users**. Your own row's dropdown should be disabled.
+6. Click your email in the sidebar, set your name, and confirm it appears in
+   **Users**.
+7. Sign out, use **Forgot your password?**, and follow the emailed link. If it
+   never arrives, that is step 7's SMTP limit, not a bug.
 
 ### Why the dispatch token is scoped that narrowly
 

@@ -63,6 +63,7 @@ export const ROLE_LABELS: Record<Role, string> = {
 /** Which routes each role may open, checked server-side by the layout guard. */
 export const ROUTE_CAPABILITIES: Record<string, Capability | null> = {
   "/dashboard": null, // any signed-in user
+  "/account": null, // your own profile; RLS scopes it to your row
   "/review": "viewPendingQueue",
   "/approved": "viewApproved",
   "/declined": "viewDeclined",
