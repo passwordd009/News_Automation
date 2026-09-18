@@ -1,12 +1,10 @@
 # Deployment plan
 
-Everything built so far assumes one machine: the dashboard, the Python worker
-and Ollama all sit together on your laptop. Deploying splits them apart, and
-three things stop working the moment it does.
-
-The plan for each, and what is already done: Ollama now accepts a bearer token
-so a networked instance is not left open, and the scheduled workflows exist.
-Standing up the VM and moving the button are still ahead.
+Development assumes one machine: dashboard, Python worker and Ollama together
+on your laptop. Deploying splits them apart, and three things stopped working
+the moment it did. All three are now solved in code — what remains is
+configuration, and **"Deploying, in order" below is the runbook**. The sections
+before it explain why the shape is what it is.
 
 ---
 
@@ -163,35 +161,140 @@ address. More moving parts, no exposed surface.
 Screening one article is a small prompt in and a short JSON object out, but on
 CPU-only hardware a 8B model still takes tens of seconds. At 50 articles a day
 that is a run measured in tens of minutes — fine for a 06:00 cron, slow for a
-button press. The ingest workflow allows 45 minutes and sets `LLM_TIMEOUT=300`
+button press. The ingest workflow allows 120 minutes and sets `LLM_TIMEOUT=300`
 for that reason. A smaller model, or a GPU instance, is the lever if runs start
 timing out.
 
-## Steps
+## Deploying, in order
 
-| # | Step | Depends on |
-|---|---|---|
-| 1 | ~~Token auth for a networked Ollama~~ | ✅ done |
-| 2 | ~~GitHub Actions: daily ingest, Monday-noon rotation~~ | ✅ done |
-| 3 | ~~Run the model on the runner — no host to stand up~~ | ✅ done |
-| 4 | ~~Point the button at `workflow_dispatch` instead of a local process~~ | ✅ done |
-| 5 | Add the Supabase secrets, then run each workflow manually once | you |
-| 6 | Deploy the dashboard to Vercel, with the dispatch token | step 5 |
-| 7 | Harden: rotate keys, confirm RLS in production, Supabase auth settings | — |
+The code work is done. What is left is configuration, and the order matters in
+one place: **the dispatch ref is `main`**, so the button runs whatever version
+of `ingest.yml` is on `main` — not the branch you developed on. Merging first
+is step 1 for that reason, not tidiness.
 
-### The dispatch token
+### 1. Merge to `main`
 
-The button needs a **fine-grained** personal access token, scoped to this
-repository only, with exactly one permission:
+```bash
+git checkout main && git merge <your branch> && git push
+```
+
+Until this happens the collect button fails with a 422: the workflow on `main`
+has no `date` or `request_id` input, so GitHub rejects the dispatch. Set
+`GITHUB_DISPATCH_REF` if you deploy from a different branch.
+
+### 2. Apply every migration
+
+```bash
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
+
+Seven migrations, all re-runnable. Three are recent and easy to miss:
+
+| Migration | What breaks without it |
+|---|---|
+| `20260914000001_attach_signup_trigger` | New signups get no profile row and cannot sign in |
+| `20260916000001_article_effective_date` | Day tabs read nothing; the queue looks empty |
+| `20260918000001_return_to_review` | Sent-back articles keep a withdrawn approval stamp |
+
+Confirm with `psql "$SUPABASE_DB_URL" -c "\\d public.articles"` — you want
+`effective_date` in the column list.
+
+### 3. GitHub Actions secrets
+
+**Settings → Secrets and variables → Actions → Secrets:**
+
+| Secret | Value |
+|---|---|
+| `SUPABASE_URL` | your project URL |
+| `SUPABASE_SECRET_KEY` | the secret (service-role) key |
+
+Both are required; everything else is optional. The secret key bypasses RLS —
+it belongs here and in `worker/.env`, never in Vercel.
+
+**Variables** (optional): `OLLAMA_MODEL` defaults to `llama3.2:3b`, `TIMEZONE`
+to `America/New_York`.
+
+### 4. Run each workflow by hand, once
+
+**Actions → Collect articles → Run workflow**, with the inputs blank. Then the
+same for **Rotate the editorial week**.
+
+Do this before trusting the schedule, and before deploying the dashboard. It
+separates "does the pipeline work" from "does the button work" — and the first
+run is the slow one, since it pulls the model before the cache exists.
+
+A green run ends with a line like
+`Fetched: 138   Duplicates: 88   Reviewed: 8   Recommended: 1   Inserted: 8`.
+
+### 5. The dispatch token
+
+Settings → Developer settings → **Fine-grained** personal access tokens. Scope
+it to this repository only, with exactly one permission:
 
 | Permission | Level |
 |---|---|
 | **Actions** | **Read and write** |
 | Metadata | Read (added automatically) |
 
-Set it as `GITHUB_DISPATCH_TOKEN` in `web/.env.local` locally and in Vercel's
-environment variables. No `NEXT_PUBLIC_` prefix — that would ship it to the
-browser.
+Nothing else — see the warning below.
+
+### 6. Vercel
+
+Import the repository, then:
+
+| Setting | Value |
+|---|---|
+| Root directory | `web` |
+| Node version | 22 (supabase-js requires it) |
+| Framework | Next.js (detected) |
+
+Environment variables:
+
+| Variable | |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | your project URL |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | the publishable (anon) key |
+| `GITHUB_DISPATCH_TOKEN` | the token from step 5 |
+
+The first two are public by design and ship in the browser bundle; RLS is what
+protects the data behind them. The third must **not** have a `NEXT_PUBLIC_`
+prefix or it ships too.
+
+`SUPABASE_SECRET_KEY` does not go here. Nothing in `web/` reads it.
+
+### 7. Supabase auth settings
+
+**Authentication → URL Configuration:** set the Site URL to your Vercel domain
+and add it to the redirect allow-list, or email links point at localhost.
+
+**Authentication → Providers → Email:** decide on email confirmation, and decide
+whether signup stays open. Anyone who signs up becomes a Content Creator and can
+read approved and declined articles.
+
+### 8. Harden, before real data
+
+- **Rotate the Supabase keys.** They have passed through local files and
+  terminal output during setup. Rotating means updating them in three places:
+  Actions secrets, Vercel, and `worker/.env`.
+- **Confirm RLS in production.** The local suite proves the policies against a
+  throwaway cluster; verify against the real project by signing in as a Content
+  Creator and checking the pending queue is empty for them.
+- **Promote your account.** Sign up through the deployed app first, then run
+  `supabase/seed_admin.sql` with your email.
+
+### Smoke test
+
+In order, after deploying:
+
+1. Sign in. You should land on the dashboard, not a redirect loop.
+2. Open **Review**. The day tabs should show counts, not an error banner.
+3. Press **Collect today's news**. It should report a run starting and link to
+   it. Minutes, not seconds.
+4. Approve something, open **Approved**, and send it back.
+5. Open **Users**. Your own row's dropdown should be disabled.
+
+### Why the dispatch token is scoped that narrowly
 
 **Do not grant `Workflows` or `Contents: write`.** `ingest.yml` runs with
 `SUPABASE_SECRET_KEY` in its environment, and both of those permissions are a
@@ -204,28 +307,12 @@ Rotate or revoke it at Settings → Developer settings → Personal access token
 Nothing else in the system depends on it: the daily schedule uses Actions'
 own credentials, not this token.
 
-### Secrets and variables
+### Pointing at a hosted model instead
 
-In **Settings → Secrets and variables → Actions**:
-
-| Secret | |
-|---|---|
-| `SUPABASE_URL` | your project URL |
-| `SUPABASE_SECRET_KEY` | the secret (service-role) key — never in Vercel |
-| `OLLAMA_URL` | **only** to use a hosted model instead of the runner |
-| `OLLAMA_AUTH_TOKEN` | with `OLLAMA_URL`, if it is behind a proxy |
-
-| Variable | Default if unset |
-|---|---|
-| `OLLAMA_MODEL` | `llama3.2:3b` |
-| `TIMEZONE` | `America/New_York` |
-
-Only the two Supabase secrets are required. Leave the Ollama ones unset and the
-model runs on the runner.
-
-Both workflows have `workflow_dispatch`, so run each once by hand from the
-Actions tab before trusting the schedule. `ingest.py --check` runs first and
-reports Supabase and the model separately.
+Two further Actions secrets switch the workflow away from the runner, with no
+code change: `OLLAMA_URL`, and `OLLAMA_AUTH_TOKEN` if it sits behind a proxy.
+Leave both unset and the model runs on the runner, which is the default and
+costs nothing.
 
 ### About the two cron lines
 
@@ -233,21 +320,6 @@ GitHub cron is UTC and ignores daylight saving, so a single expression drifts
 an hour twice a year. Each workflow is scheduled at both offsets and decides
 whether to act: ingest checks the local hour, and `rotate_week.py` already
 refuses unless it is Monday at or after noon **and** the week has ended.
-
-### Step 5 in detail — before real data
-
-- **Rotate the Supabase keys.** They have been in local files and terminal
-  output during setup; a deployed system should not run on them.
-- **Confirm RLS is on in production.** The local suite proves the policies, but
-  verify against the real project: sign in as a Content Creator and check the
-  pending queue is empty for them.
-- **Supabase Auth.** Turn on email confirmation, set the Site URL and redirect
-  URLs to the deployed domain, and decide whether signup stays open — anyone
-  who signs up becomes a Content Creator and can read approved and declined
-  articles.
-- **Never expose the secret key.** It belongs in GitHub Actions secrets and, if
-  the button dispatches, nowhere else. Only `NEXT_PUBLIC_SUPABASE_URL` and the
-  publishable key belong in Vercel.
 
 ---
 
