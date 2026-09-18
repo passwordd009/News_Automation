@@ -36,13 +36,23 @@ export function AppSidebar({
   return (
     <nav
       aria-label="Main"
-      className="flex shrink-0 flex-col gap-1 border-b border-border bg-surface px-4 py-4 sm:w-56 sm:border-r sm:border-b-0 sm:px-3 sm:py-6"
+      className={[
+        "flex shrink-0 flex-col gap-1 border-b border-border bg-surface px-4 py-4",
+        // Fixed from the `sm` breakpoint up, where there is room for a column.
+        // The layout reserves the same width so nothing slides underneath.
+        "sm:fixed sm:inset-y-0 sm:left-0 sm:w-56 sm:overflow-y-auto sm:border-r sm:border-b-0 sm:px-3 sm:py-6",
+      ].join(" ")}
     >
-      <div className="mb-4 flex items-center gap-3 px-2">
+      {/*
+        The mark keeps a light ground in both themes rather than being
+        inverted. Inverting black line art produces a different logo, and this
+        one is the brand — so the panel comes to it.
+      */}
+      <div className="brand-panel mb-4 flex items-center gap-3 rounded-lg border border-brand-panel-border bg-brand-panel px-3 py-2.5 text-brand-panel-text">
         <HestiaLogo size={36} />
         <div>
           <p className="text-sm font-semibold leading-tight">Project Hestia</p>
-          <p className="text-xs text-muted">Weekly Wrap-Up</p>
+          <p className="text-xs font-medium text-accent">Weekly Wrap-Up</p>
         </div>
       </div>
 

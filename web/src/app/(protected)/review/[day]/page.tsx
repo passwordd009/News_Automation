@@ -5,28 +5,38 @@ import { getPendingCountsByDay, getReviewQueue } from "@/lib/articles/queries";
 import { ReviewArticleCard } from "@/components/articles/ReviewArticleCard";
 import { DayActions } from "@/components/articles/DayActions";
 import { WeekDayTabs } from "@/components/weekly/WeekDayTabs";
+import { Pagination, resolvePage } from "@/components/navigation/Pagination";
 import { formatPeriodRange } from "@/lib/format";
 import { isValidDay, newsroomToday, weekDays } from "@/lib/week";
 import { dispatchAvailable } from "@/lib/worker/dispatch";
 
 export const metadata = { title: "Review · Project Hestia" };
 
+/** Four is a screenful: enough to compare, few enough to decide on at once. */
+const PER_PAGE = 4;
+
 /**
  * One day of the editorial week, as its own page.
  *
  * Each day is a route rather than a query parameter, so a day is linkable,
  * bookmarkable, and goes in the browser's history — clicking through the week
- * and pressing back does what it looks like it does.
+ * and pressing back does what it looks like it does. Paging within a day stays
+ * a query parameter: it is a position in one day's queue, not a different day.
  */
 export default async function ReviewDayPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ day: string }>;
+  searchParams: Promise<{ page?: string }>;
 }) {
   const profile = await requireProfile();
   if (!can(profile.role, "viewPendingQueue")) redirect("/dashboard?denied=1");
 
-  const { day: requestedDay } = await params;
+  const [{ day: requestedDay }, { page: requestedPage }] = await Promise.all([
+    params,
+    searchParams,
+  ]);
   const { period } = await getReviewQueue();
 
   if (!period) {
@@ -60,8 +70,14 @@ export default async function ReviewDayPage({
 
   const failure = queue.error ?? counts.error;
 
-  const recommended = articles.filter((article) => article.ai_recommended);
-  const rest = articles.filter((article) => !article.ai_recommended);
+  // The query already orders recommendations first, so paging the whole day in
+  // order fills page one with them rather than scattering them through the set.
+  const pageCount = Math.ceil(articles.length / PER_PAGE);
+  const page = resolvePage(requestedPage, pageCount);
+  const onThisPage = articles.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  const recommended = onThisPage.filter((article) => article.ai_recommended);
+  const rest = onThisPage.filter((article) => !article.ai_recommended);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -152,6 +168,22 @@ export default async function ReviewDayPage({
                 ))}
               </ol>
             </section>
+          )}
+
+          <Pagination
+            page={page}
+            pageCount={pageCount}
+            hrefFor={(n) =>
+              n <= 1 ? `/review/${requestedDay}` : `/review/${requestedDay}?page=${n}`
+            }
+            label={`Pages of ${selectedDay.label}'s queue`}
+          />
+
+          {pageCount > 1 && (
+            <p className="mt-3 text-center text-xs text-muted">
+              Page {page} of {pageCount} · {articles.length} article
+              {articles.length === 1 ? "" : "s"} from {selectedDay.label}
+            </p>
           )}
         </>
       )}

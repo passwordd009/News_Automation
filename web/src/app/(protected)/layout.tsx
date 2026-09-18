@@ -36,9 +36,12 @@ export default async function ProtectedLayout({
   }
 
   return (
-    <div className="flex min-h-screen flex-col sm:flex-row">
+    <div className="flex min-h-screen flex-col sm:block">
       <AppSidebar role={profile.role} email={profile.email} />
-      <div className="min-w-0 flex-1">{children}</div>
+      {/* Matches the fixed sidebar's width so the content starts beside it
+          rather than beneath it. Below `sm` the sidebar is in flow and this
+          offset does not apply. */}
+      <div className="min-w-0 flex-1 sm:ml-56">{children}</div>
     </div>
   );
 }

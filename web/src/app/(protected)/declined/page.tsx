@@ -2,9 +2,12 @@ import { redirect } from "next/navigation";
 import { requireProfile } from "@/lib/auth/getCurrentProfile";
 import { can } from "@/lib/auth/permissions";
 import { getDeclined } from "@/lib/articles/queries";
+import { Pagination, resolvePage } from "@/components/navigation/Pagination";
 import { formatDate } from "@/lib/format";
 
 export const metadata = { title: "Declined · Project Hestia" };
+
+const PER_PAGE = 4;
 
 /**
  * Stories that were turned down, with the reason given.
@@ -13,11 +16,23 @@ export const metadata = { title: "Declined · Project Hestia" };
  * deleting them on the spot, so a content creator can see what was considered
  * and why — and ask for a second look.
  */
-export default async function DeclinedPage() {
+export default async function DeclinedPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ page?: string }>;
+}) {
   const profile = await requireProfile();
   if (!can(profile.role, "viewDeclined")) redirect("/dashboard?denied=1");
 
-  const { articles, error } = await getDeclined();
+  const [{ articles, error }, { page: requestedPage }] = await Promise.all([
+    getDeclined(),
+    searchParams,
+  ]);
+
+  // This list only grows across a period, so it is paged like the queue.
+  const pageCount = Math.ceil(articles.length / PER_PAGE);
+  const page = resolvePage(requestedPage, pageCount);
+  const onThisPage = articles.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
   return (
     <main className="mx-auto max-w-2xl px-6 py-10">
@@ -49,7 +64,7 @@ export default async function DeclinedPage() {
       )}
 
       <ol className="mt-10 space-y-6">
-        {articles.map((article) => (
+        {onThisPage.map((article) => (
           <li key={article.id} className="border-l-2 border-border pl-5">
             <h2 className="text-base font-semibold leading-snug">{article.title}</h2>
 
@@ -74,6 +89,13 @@ export default async function DeclinedPage() {
           </li>
         ))}
       </ol>
+
+      <Pagination
+        page={page}
+        pageCount={pageCount}
+        hrefFor={(n) => (n <= 1 ? "/declined" : `/declined?page=${n}`)}
+        label="Pages of declined stories"
+      />
     </main>
   );
 }
