@@ -187,3 +187,108 @@ export async function getPendingCountsByDay(days: string[]): Promise<DayCounts> 
   }
   return { pending, recommended };
 }
+
+export interface ArchivedWeek {
+  period: WeeklyPeriod;
+  /** How many approved stories that week holds. */
+  count: number;
+}
+
+export interface ArchiveMonth {
+  /** "2026-09", for sorting and for the key. */
+  key: string;
+  /** "September 2026". */
+  label: string;
+  weeks: ArchivedWeek[];
+}
+
+/**
+ * Every week that has approved stories in it, newest first, grouped by month.
+ *
+ * Grouped by the month the week *started* in. A week spanning a month boundary
+ * has to land somewhere, and its start is what the archive's date range leads
+ * with, so grouping anywhere else would put a week under a heading its own
+ * label contradicts.
+ */
+export async function getArchiveMonths(): Promise<{
+  months: ArchiveMonth[];
+  error?: string;
+}> {
+  const supabase = await createClient();
+
+  const { data: periods, error: periodError } = await supabase
+    .from("weekly_periods")
+    .select("*")
+    .order("start_date", { ascending: false })
+    .returns<WeeklyPeriod[]>();
+
+  if (periodError) {
+    console.error("Could not load the archive:", periodError.message);
+    return { months: [], error: explainQueryError(periodError.message) };
+  }
+
+  const { data: approved, error: articleError } = await supabase
+    .from("articles")
+    .select("weekly_period_id")
+    .eq("status", "approved")
+    .returns<{ weekly_period_id: string }[]>();
+
+  if (articleError) {
+    console.error("Could not count the archive:", articleError.message);
+    return { months: [], error: explainQueryError(articleError.message) };
+  }
+
+  const counts = new Map<string, number>();
+  for (const row of approved ?? []) {
+    counts.set(row.weekly_period_id, (counts.get(row.weekly_period_id) ?? 0) + 1);
+  }
+
+  const months = new Map<string, ArchiveMonth>();
+  for (const period of periods ?? []) {
+    const count = counts.get(period.id) ?? 0;
+    // A week nobody approved anything in is not an archive entry.
+    if (count === 0) continue;
+
+    const key = period.start_date.slice(0, 7);
+    if (!months.has(key)) {
+      months.set(key, { key, label: monthLabel(period.start_date), weeks: [] });
+    }
+    months.get(key)!.weeks.push({ period, count });
+  }
+
+  return { months: [...months.values()] };
+}
+
+const MONTH = new Intl.DateTimeFormat("en-US", {
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+function monthLabel(startDate: string): string {
+  return MONTH.format(new Date(`${startDate.slice(0, 7)}-01T00:00:00Z`));
+}
+
+export interface DeclinedList {
+  articles: Article[];
+  error?: string;
+}
+
+/** Declined stories, most recently decided first. */
+export async function getDeclined(): Promise<DeclinedList> {
+  const supabase = await createClient();
+
+  const { data, error } = await supabase
+    .from("articles")
+    .select("*")
+    .eq("status", "declined")
+    .order("declined_at", { ascending: false, nullsFirst: false })
+    .returns<Article[]>();
+
+  if (error) {
+    console.error("Could not load declined articles:", error.message);
+    return { articles: [], error: explainQueryError(error.message) };
+  }
+
+  return { articles: data ?? [] };
+}

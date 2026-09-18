@@ -46,7 +46,7 @@ export function WeekDayTabs({
           return (
             <li key={day.date}>
               <Link
-                href={`/review?day=${day.date}`}
+                href={`/review/${day.date}`}
                 aria-current={active ? "page" : undefined}
                 className={[
                   "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition -mb-px",

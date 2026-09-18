@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireProfile } from "@/lib/auth/getCurrentProfile";
 import { can } from "@/lib/auth/permissions";
@@ -17,13 +18,14 @@ export default async function ApprovedPage() {
       <WeeklyArticleList
         period={period}
         articles={articles}
+        canReturn={can(profile.role, "approveArticle")}
         emptyMessage={
           can(profile.role, "approveArticle") ? (
             <>
               Nothing approved yet. Work through the{" "}
-              <a href="/review" className="underline underline-offset-4 hover:text-accent">
+              <Link href="/review" className="underline underline-offset-4 hover:text-accent">
                 review queue
-              </a>{" "}
+              </Link>{" "}
               and approved stories will appear here.
             </>
           ) : (
