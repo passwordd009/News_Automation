@@ -112,6 +112,13 @@ def run_ingest(
     per-day collection the review queue offers. Feeds only carry their recent
     entries, so a day already scrolled off the end of every feed yields
     nothing — that is a property of RSS, not a failure here.
+
+    **Only screened articles are stored**, except under ``review='never'``
+    where collecting unscored is the whole point. An article the model could
+    not score cannot be ranked, cannot be recommended, and arrives in the queue
+    as a bare headline — which is work for a human, not help. Dropping it is
+    not a loss: the feeds still carry it, so the next run picks it up again
+    once the model is answering.
     """
     settings = settings or get_settings()
     store = store or SupabaseStore(settings=settings)
@@ -159,11 +166,17 @@ def run_ingest(
     if not candidates:
         return stats
 
+    # Under review='never' the caller asked for unscored articles explicitly,
+    # so the screening requirement does not apply to them.
+    store_unscored = review == "never"
+
     rows = []
     for index, candidate in enumerate(candidates, start=1):
         if reviewer is None:
-            # No screening: the article still reaches the queue, just unscored.
-            rows.append(article_row(candidate, None, period["id"]))
+            if store_unscored:
+                rows.append(article_row(candidate, None, period["id"]))
+            else:
+                stats.skipped_unscored += 1
             continue
 
         logger.info("Reviewing %d/%d: %s", index, len(candidates), candidate.title[:70])
@@ -174,10 +187,22 @@ def run_ingest(
             if outcome.ai_recommended:
                 stats.recommended += 1
         else:
-            # Keep it anyway — a human can judge what the model could not.
             stats.review_failed += 1
+            if not store_unscored:
+                # Unscorable, so unrankable. The feed still has it; the next
+                # run will try again.
+                logger.warning(
+                    "Dropping %r — the model could not score it: %s",
+                    candidate.title[:70],
+                    outcome.error,
+                )
+                continue
 
         rows.append(article_row(candidate, outcome, period["id"]))
+
+    if not rows:
+        logger.info("Nothing to store: %d article(s) went unscored.", stats.skipped_unscored)
+        return stats
 
     if dry_run:
         logger.info("Dry run — %d row(s) built but not written.", len(rows))

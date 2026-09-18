@@ -44,12 +44,23 @@ export default async function ReviewPage({
 
   const collectConfigured = dispatchAvailable();
 
-  const [{ articles }, counts] = await Promise.all([
+  const [queue, counts] = await Promise.all([
     getReviewQueue(selected),
     getPendingCountsByDay(days.filter((d) => !d.isFuture).map((d) => d.date)),
   ]);
 
-  const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  const { articles } = queue;
+  const total = Object.values(counts.pending).reduce((sum, n) => sum + n, 0);
+  const recommendedThisWeek = Object.values(counts.recommended).reduce((sum, n) => sum + n, 0);
+
+  // A read that failed is not an empty day. Say so rather than rendering a
+  // reassuring empty state over the top of a broken query.
+  const failure = queue.error ?? counts.error;
+
+  // Recommended articles are lifted out rather than just sorted to the top:
+  // on a day with thirty stories, "first in a long list" is not visible.
+  const recommended = articles.filter((article) => article.ai_recommended);
+  const rest = articles.filter((article) => !article.ai_recommended);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -61,11 +72,26 @@ export default async function ReviewPage({
           {formatPeriodRange(period.start_date, period.end_date)}
         </p>
         <p className="mt-1 text-sm text-muted">
-          {total === 0
-            ? "Nothing waiting this week."
-            : `${total} article${total === 1 ? "" : "s"} awaiting a decision this week`}
+          {failure
+            ? "The queue could not be read."
+            : total === 0
+              ? "Nothing waiting this week."
+              : `${total} article${total === 1 ? "" : "s"} awaiting a decision this week` +
+                (recommendedThisWeek > 0
+                  ? ` · ${recommendedThisWeek} AI-recommended`
+                  : "")}
         </p>
       </header>
+
+      {failure && (
+        <div
+          role="alert"
+          className="mt-6 rounded-md border border-negative/40 bg-negative/5 px-4 py-3"
+        >
+          <p className="text-sm font-medium text-negative">The queue could not be read</p>
+          <p className="mt-1 text-sm leading-relaxed text-muted">{failure}</p>
+        </div>
+      )}
 
       <WeekDayTabs days={days} selected={selected} counts={counts} />
 
@@ -78,27 +104,60 @@ export default async function ReviewPage({
       />
 
       {articles.length === 0 ? (
-        <div className="mt-8 rounded-lg border border-dashed border-border px-6 py-12 text-center">
-          <p className="text-sm font-medium">Nothing from {selectedDay.label}.</p>
-          <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-            {`Collect ${selectedDay.label}'s news above. Feeds only carry their recent entries, so a day that has scrolled off the end of every feed may return nothing.`}
-          </p>
-        </div>
+        !failure && (
+          <div className="mt-8 rounded-lg border border-dashed border-border px-6 py-12 text-center">
+            <p className="text-sm font-medium">Nothing from {selectedDay.label}.</p>
+            <p className="mx-auto mt-2 max-w-md text-sm text-muted">
+              Collect {selectedDay.label}&apos;s news above. Feeds only carry their recent
+              entries, so a day that has scrolled off the end of every feed may return
+              nothing.
+            </p>
+          </div>
+        )
       ) : (
         <>
-          <ol className="mt-8 space-y-5">
-            {articles.map((article) => (
-              <li key={article.id}>
-                <ReviewArticleCard article={article} />
-              </li>
-            ))}
-          </ol>
+          {recommended.length > 0 && (
+            <section className="mt-8">
+              <h2 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-accent">
+                Recommended
+                <span className="rounded-full bg-accent px-1.5 py-0.5 text-[11px] tabular-nums text-white">
+                  {recommended.length}
+                </span>
+              </h2>
+              <p className="mt-1 text-xs text-muted">
+                What the AI would put in the post. You still decide.
+              </p>
+              <ol className="mt-4 space-y-5">
+                {recommended.map((article) => (
+                  <li key={article.id}>
+                    <ReviewArticleCard article={article} />
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
+          {rest.length > 0 && (
+            <section className="mt-10">
+              {recommended.length > 0 && (
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-muted">
+                  Everything else from {selectedDay.label}
+                </h2>
+              )}
+              <ol className="mt-4 space-y-5">
+                {rest.map((article) => (
+                  <li key={article.id}>
+                    <ReviewArticleCard article={article} />
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
 
           <p className="mt-10 text-xs leading-relaxed text-muted">
-            {selectedDay.label}&apos;s articles, sorted with reconsiderations
-            first, then the AI&apos;s recommendations, then by score. Everything
-            collected is listed — low-scoring stories sink to the bottom rather
-            than being hidden, so the decision stays yours.
+            {selectedDay.label}&apos;s articles. Everything collected is listed — low
+            scorers sink to the bottom rather than being hidden, so the decision stays
+            yours.
           </p>
         </>
       )}

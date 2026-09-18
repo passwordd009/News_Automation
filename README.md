@@ -176,9 +176,10 @@ a fine-grained token scoped to this repository with one permission:
 > run it. Not `Contents: write` either, for the same reason via a pushed branch.
 > Actions: write can only run the workflow as already committed.
 
-Without the token the button is hidden and the rest of the dashboard is
-unaffected. The daily schedule keeps running regardless — it does not use the
-token at all.
+Without the token the button renders disabled, with a note saying what to set —
+rather than vanishing, which reads as the feature not existing. The rest of the
+dashboard is unaffected, and the daily schedule keeps running regardless: it
+uses Actions' own credentials, not this token.
 
 ---
 
@@ -204,13 +205,17 @@ python worker/scripts/ingest.py --no-review     # collect without AI screening
 Everything lands as `pending`. The worker cannot approve — that invariant is
 enforced in code, and RLS enforces it for everyone else.
 
-**The model is optional on the command line only.** Run by hand, the worker
-screens when Ollama is reachable and collects without it when it is not, and
-unscored articles say so in the queue rather than pretending to a score.
+**Only screened articles are stored.** An article the model could not score
+cannot be ranked or recommended, and arrives in the queue as a bare headline —
+work for a human rather than help. Those are dropped and reported, not stored.
+Nothing is lost: the feeds still carry them, so the next run collects them again
+once the model is answering.
 
-Both automated paths — the schedule and the button — use `--review require`
-instead. They stop rather than filing a whole day unscored, which would bury
-the queue with no sign that anything was wrong.
+`--no-review` is the deliberate exception. It skips screening entirely and
+stores the unscored results, for when you want the raw list.
+
+Both automated paths — the schedule and the button — use `--review require`, so
+they stop rather than filing a whole day unscored.
 
 ### Review, then hand over
 

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { DayCounts } from "@/lib/articles/queries";
 import type { WeekDay } from "@/lib/week";
 
 /**
@@ -7,6 +8,9 @@ import type { WeekDay } from "@/lib/week";
  * Days that have not arrived are rendered as plain text, not links — there is
  * nothing to show and nothing to collect, so a disabled-looking button that
  * still responds to a click would be a lie.
+ *
+ * A day with an AI recommendation on it is marked, so a day worth opening is
+ * visible without opening every day to find out.
  */
 export function WeekDayTabs({
   days,
@@ -15,14 +19,15 @@ export function WeekDayTabs({
 }: {
   days: WeekDay[];
   selected: string;
-  counts: Record<string, number>;
+  counts: DayCounts;
 }) {
   return (
     <nav aria-label="Days of the week" className="mt-6">
       <ol className="flex flex-wrap gap-1 border-b border-border">
         {days.map((day) => {
           const active = day.date === selected;
-          const count = counts[day.date] ?? 0;
+          const count = counts.pending[day.date] ?? 0;
+          const recommended = counts.recommended[day.date] ?? 0;
 
           if (day.isFuture) {
             return (
@@ -62,6 +67,14 @@ export function WeekDayTabs({
                     ].join(" ")}
                   >
                     {count}
+                  </span>
+                )}
+                {recommended > 0 && (
+                  <span
+                    title={`${recommended} AI-recommended on ${day.label}`}
+                    className="text-xs text-accent"
+                  >
+                    ★{recommended}
                   </span>
                 )}
               </Link>

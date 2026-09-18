@@ -45,7 +45,11 @@ def parse_args() -> argparse.Namespace:
         action="store_const",
         const="never",
         dest="review",
-        help="Collect without AI screening. Same as --review never.",
+        help=(
+            "Collect without AI screening and store the results unscored. "
+            "Same as --review never. Under auto and require, articles the model "
+            "did not score are dropped rather than stored."
+        ),
     )
     parser.add_argument(
         "--for-date",
@@ -142,9 +146,18 @@ def main() -> int:
 
     print(f"\n{stats.format_summary()}")
 
-    if stats.inserted and not stats.reviewed and args.review != "require":
+    if stats.skipped_unscored:
         print(
-            "\nCollected without AI screening, so nothing is scored — "
+            f"\n{stats.skipped_unscored} article(s) were collected but never scored, "
+            "so they were not stored. An unscored article cannot be ranked or "
+            "recommended, and the feeds still carry it — the next run will pick it "
+            "up once the model is answering."
+        )
+        print("Use --no-review if you deliberately want unscored articles stored.")
+
+    if stats.inserted and not stats.reviewed and args.review == "never":
+        print(
+            "\nCollected without AI screening, as asked — nothing is scored, so "
             "every article is waiting on your judgement."
         )
 
