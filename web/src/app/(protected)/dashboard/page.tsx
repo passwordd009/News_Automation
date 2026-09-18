@@ -33,7 +33,7 @@ export default async function DashboardPage({
     .eq("status", "active")
     .maybeSingle<WeeklyPeriod>();
 
-  const showCollect = can(profile.role, "viewPendingQueue") && dispatchAvailable();
+  const showCollect = can(profile.role, "viewPendingQueue");
 
   const links = [
     { href: "/review", label: "Review queue", capability: "viewPendingQueue" as const },
@@ -68,7 +68,7 @@ export default async function DashboardPage({
 
       {showCollect && (
         <div className="mt-8 rounded-lg border border-border bg-surface px-5 py-4">
-          <RunIngestButton />
+          <RunIngestButton configured={dispatchAvailable()} />
         </div>
       )}
 

@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { clearDay } from "@/lib/articles/mutations";
+import { CollectUnavailable } from "./CollectUnavailable";
 import { RunStatus } from "./RunStatus";
 import { useCollectRun } from "./useCollectRun";
 
@@ -20,13 +21,13 @@ export function DayActions({
   day,
   label,
   pendingCount,
-  canCollect,
+  collectConfigured,
   canClear,
 }: {
   day: string;
   label: string;
   pendingCount: number;
-  canCollect: boolean;
+  collectConfigured: boolean;
   canClear: boolean;
 }) {
   const router = useRouter();
@@ -83,16 +84,15 @@ export function DayActions({
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-3">
-            {canCollect && (
-              <button
-                type="button"
-                onClick={() => run.start({ date: day })}
-                disabled={run.busy}
-                className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:opacity-60"
-              >
-                {run.busy ? "Collecting…" : `Collect ${label}'s news`}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => run.start({ date: day })}
+              disabled={run.busy || !collectConfigured}
+              title={collectConfigured ? undefined : "Collecting is not configured"}
+              className="rounded-md bg-accent px-4 py-2 text-sm font-medium text-white transition hover:bg-accent-strong disabled:opacity-40"
+            >
+              {run.busy ? "Collecting…" : `Collect ${label}'s news`}
+            </button>
 
             {canClear && pendingCount > 0 && (
               <button
@@ -107,7 +107,13 @@ export function DayActions({
             {message && <span className="text-xs text-positive">{message}</span>}
           </div>
 
-          <RunStatus run={run} />
+          {collectConfigured ? (
+            <RunStatus run={run} />
+          ) : (
+            <div className="mt-3">
+              <CollectUnavailable />
+            </div>
+          )}
         </>
       )}
 
