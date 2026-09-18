@@ -4,7 +4,7 @@ import { can, ROLE_LABELS } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import type { WeeklyPeriod } from "@/types/database";
 import { RunIngestButton } from "@/components/articles/RunIngestButton";
-import { workerAvailable } from "@/lib/worker/localWorker";
+import { dispatchAvailable } from "@/lib/worker/dispatch";
 
 export const metadata = { title: "Dashboard · Project Hestia" };
 
@@ -33,7 +33,7 @@ export default async function DashboardPage({
     .eq("status", "active")
     .maybeSingle<WeeklyPeriod>();
 
-  const showCollect = can(profile.role, "viewPendingQueue") && workerAvailable();
+  const showCollect = can(profile.role, "viewPendingQueue") && dispatchAvailable();
 
   const links = [
     { href: "/review", label: "Review queue", capability: "viewPendingQueue" as const },

@@ -110,23 +110,21 @@ your machine, so there is no `ollama serve` to remember. On Linux the package
 installs a systemd unit that does the same; if you are running the tarball by
 hand, start it with `ollama serve`.
 
-**This is what makes the dashboard's collect button screen articles.** The
-button runs the worker with `--review auto`: it screens when the model answers
-and collects without it when it does not, so a click always produces articles.
-The review page says which of the two you are about to get, above the button —
-"AI screening on" or "off", because an unscored queue and a screened queue that
-recommended nothing look identical otherwise.
-
-Check it end to end with:
+This is only needed to run `ingest.py` yourself. Check it with:
 
 ```bash
 python worker/scripts/ingest.py --check
 ```
 
-The scheduled GitHub Actions run installs Ollama on the runner and pulls the
-same model from cache, so nothing needs to be hosted between runs. Setting the
-`OLLAMA_URL` secret points it at your own instance instead —
-`docs/OLLAMA_VM.md` is that runbook, and it is optional.
+**The dashboard's collect button does not use it.** The button dispatches the
+GitHub Actions workflow, which installs Ollama on the runner and pulls the same
+model from cache — so a collection started by hand is screened on exactly the
+same terms as the nightly one, and nothing needs to be hosted between runs.
+Setting the `OLLAMA_URL` secret points the workflow at your own instance
+instead; `docs/OLLAMA_VM.md` is that runbook, and it is optional.
+
+Both the scheduled and the dispatched run use `--review require`, so a model
+that will not start fails the run rather than quietly filing a day unscored.
 
 Any Ollama model works; set `OLLAMA_MODEL` in `worker/.env`. The provider sits
 behind an interface, so Claude, OpenAI or Gemini can replace it by registering a
@@ -155,14 +153,32 @@ Open http://localhost:3000, create your account, then run `seed_admin.sql`.
 
 ### Collecting from the dashboard
 
-**Collect new articles** appears on the dashboard and on `/review` for anyone
-who can review. It runs the same worker as the command line, so no terminal is
-needed day to day — no configuration either, as long as the worker sits beside
-the dashboard, which it does in this repository.
+**Collect new articles** appears on the dashboard, and `Collect <day>'s news` on
+each open day tab in `/review`, for anyone who can review. The button asks
+GitHub Actions to run the ingest workflow and then watches it, refreshing the
+queue when the run lands.
 
-Set `ENABLE_LOCAL_INGEST=false` to hide it where the dashboard is hosted away
-from the worker and the button could only ever fail. Ollama still has to be
-running: the button reports exactly what is missing when it is not.
+It dispatches rather than running Python locally because a deployed dashboard
+has neither: no interpreter, no `worker/` directory, no model. Dispatching is
+the only shape that works the same in development and in production, and it
+means a collection you start by hand is screened exactly like the nightly one.
+
+Expect **minutes, not seconds** — GitHub has to pick up the job, install Ollama,
+restore the weights and screen each article. The page shows the run's progress
+and links to its log.
+
+To enable it, set `GITHUB_DISPATCH_TOKEN` in `web/.env.local` (and in Vercel) to
+a fine-grained token scoped to this repository with one permission:
+**Actions: Read and write**.
+
+> Not *Workflows* — that permission edits workflow **files**, and a token that
+> could rewrite `ingest.yml` could make it print `SUPABASE_SECRET_KEY` and then
+> run it. Not `Contents: write` either, for the same reason via a pushed branch.
+> Actions: write can only run the workflow as already committed.
+
+Without the token the button is hidden and the rest of the dashboard is
+unaffected. The daily schedule keeps running regardless — it does not use the
+token at all.
 
 ---
 
@@ -188,11 +204,13 @@ python worker/scripts/ingest.py --no-review     # collect without AI screening
 Everything lands as `pending`. The worker cannot approve — that invariant is
 enforced in code, and RLS enforces it for everyone else.
 
-**The model is optional.** By default the worker screens articles when Ollama
-is reachable and collects without it when it is not, so the button always
-produces articles. Unscored ones say so in the queue rather than pretending to
-a score. The scheduled job uses `--review require` instead: it stops rather
-than filing a whole day unscored, which would bury the queue.
+**The model is optional on the command line only.** Run by hand, the worker
+screens when Ollama is reachable and collects without it when it is not, and
+unscored articles say so in the queue rather than pretending to a score.
+
+Both automated paths — the schedule and the button — use `--review require`
+instead. They stop rather than filing a whole day unscored, which would bury
+the queue with no sign that anything was wrong.
 
 ### Review, then hand over
 

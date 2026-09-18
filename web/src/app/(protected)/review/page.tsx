@@ -7,8 +7,7 @@ import { DayActions } from "@/components/articles/DayActions";
 import { WeekDayTabs } from "@/components/weekly/WeekDayTabs";
 import { formatPeriodRange } from "@/lib/format";
 import { defaultDay, isValidDay, weekDays } from "@/lib/week";
-import { workerAvailable } from "@/lib/worker/localWorker";
-import { getModelStatus } from "@/lib/worker/modelStatus";
+import { dispatchAvailable } from "@/lib/worker/dispatch";
 
 export const metadata = { title: "Review · Project Hestia" };
 
@@ -43,13 +42,11 @@ export default async function ReviewPage({
   const selected = isValidDay(requestedDay, days) ? requestedDay : defaultDay(days);
   const selectedDay = days.find((d) => d.date === selected)!;
 
-  const canCollect = workerAvailable();
+  const canCollect = dispatchAvailable();
 
-  const [{ articles }, counts, screening] = await Promise.all([
+  const [{ articles }, counts] = await Promise.all([
     getReviewQueue(selected),
     getPendingCountsByDay(days.filter((d) => !d.isFuture).map((d) => d.date)),
-    // Only worth probing where a click would actually run the worker.
-    canCollect ? getModelStatus() : Promise.resolve(null),
   ]);
 
   const total = Object.values(counts).reduce((sum, n) => sum + n, 0);
@@ -78,7 +75,6 @@ export default async function ReviewPage({
         pendingCount={articles.length}
         canCollect={canCollect}
         canClear={profile.role === "admin"}
-        screening={screening}
       />
 
       {articles.length === 0 ? (

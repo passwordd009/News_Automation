@@ -2,71 +2,104 @@ import { NextResponse } from "next/server";
 import { getCurrentProfile } from "@/lib/auth/getCurrentProfile";
 import { can } from "@/lib/auth/permissions";
 import {
-  isRunning,
-  runWorker,
+  DispatchError,
+  dispatchAvailable,
+  dispatchIngest,
+  getRunStatus,
+  isRequestId,
   validateDate,
   validateLimit,
-  workerAvailable,
-} from "@/lib/worker/localWorker";
+} from "@/lib/worker/dispatch";
 
-// child_process is not available on the edge runtime.
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Collects and screens articles on demand.
+ * Starts a collection, and reports on one already started.
  *
- * Runs the worker beside the app rather than asking anyone to open a terminal.
- * Two things still gate it: only reviewers may start a run, and only one run
- * happens at a time.
+ * POST asks GitHub Actions to run the ingest workflow and returns a handle to
+ * watch; GET reports where that run has got to. The work happens on a runner
+ * with the model installed, so a dashboard collection is screened on exactly
+ * the same terms as the nightly one.
+ *
+ * Authorization is checked on both: a reviewer may start runs, nobody else.
  */
-export async function POST(request: Request) {
-  const profile = await getCurrentProfile();
+
+function notPermitted(profile: Awaited<ReturnType<typeof getCurrentProfile>>) {
   if (!profile) {
     return NextResponse.json({ error: "You are not signed in." }, { status: 401 });
   }
   if (!can(profile.role, "viewPendingQueue")) {
     return NextResponse.json({ error: "Your role cannot collect articles." }, { status: 403 });
   }
+  return null;
+}
 
-  if (!workerAvailable()) {
-    return NextResponse.json(
-      {
-        error:
-          "The collector is not available here. It runs the worker next to the dashboard, " +
-          "so it only works where both are installed together.",
-      },
-      { status: 503 },
-    );
-  }
+const NOT_CONFIGURED =
+  "Collecting from the dashboard is not configured. GITHUB_DISPATCH_TOKEN must be set " +
+  'to a fine-grained token whose "Actions" permission is Read and write.';
 
-  if (isRunning()) {
-    return NextResponse.json(
-      { error: "A collection is already running. Wait for it to finish." },
-      { status: 409 },
-    );
+export async function POST(request: Request) {
+  const denied = notPermitted(await getCurrentProfile());
+  if (denied) return denied;
+
+  if (!dispatchAvailable()) {
+    return NextResponse.json({ error: NOT_CONFIGURED }, { status: 503 });
   }
 
   let limit: number | null;
-  let forDate: string | null;
+  let date: string | null;
   try {
     const body = await request.json().catch(() => ({}));
     limit = validateLimit(body?.limit);
-    forDate = validateDate(body?.date);
+    date = validateDate(body?.date);
   } catch (error) {
     return NextResponse.json({ error: (error as Error).message }, { status: 400 });
   }
 
-  const result = await runWorker(limit, forDate);
-
-  return NextResponse.json(result, { status: result.ok ? 200 : 500 });
+  try {
+    const handle = await dispatchIngest({ limit, date });
+    return NextResponse.json(handle, { status: 202 });
+  } catch (error) {
+    if (error instanceof DispatchError) {
+      return NextResponse.json({ error: error.message }, { status: 502 });
+    }
+    return NextResponse.json(
+      { error: "Could not reach GitHub to start the run." },
+      { status: 502 },
+    );
+  }
 }
 
-/** Lets the page ask whether a run is in progress. */
-export async function GET() {
-  const profile = await getCurrentProfile();
-  if (!profile || !can(profile.role, "viewPendingQueue")) {
-    return NextResponse.json({ error: "Not permitted." }, { status: 403 });
+export async function GET(request: Request) {
+  const denied = notPermitted(await getCurrentProfile());
+  if (denied) return denied;
+
+  const params = new URL(request.url).searchParams;
+  const requestId = params.get("requestId");
+
+  // No run named: the page is only asking whether the button should exist.
+  if (!requestId) {
+    return NextResponse.json({ available: dispatchAvailable() });
   }
-  return NextResponse.json({ available: workerAvailable(), running: isRunning() });
+
+  if (!isRequestId(requestId)) {
+    return NextResponse.json({ error: "Unknown run." }, { status: 400 });
+  }
+
+  if (!dispatchAvailable()) {
+    return NextResponse.json({ error: NOT_CONFIGURED }, { status: 503 });
+  }
+
+  const rawRunId = params.get("runId");
+  const runId = rawRunId && /^\d+$/.test(rawRunId) ? Number(rawRunId) : null;
+
+  try {
+    return NextResponse.json(await getRunStatus(requestId, runId));
+  } catch (error) {
+    if (error instanceof DispatchError) {
+      return NextResponse.json({ error: error.message }, { status: 502 });
+    }
+    return NextResponse.json({ error: "Could not reach GitHub." }, { status: 502 });
+  }
 }
