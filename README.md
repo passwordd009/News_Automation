@@ -145,9 +145,11 @@ the same API settings page. (Older projects call that key `anon`; either
 variable name works.) These are public by design — the publishable key can only
 do what RLS permits the signed-in user to do.
 
-Save the Hestia mark as `web/public/hestia-logo.png` — a square PNG with a
-transparent background. Until it is there the app falls back to a plain drawn
-ring rather than a broken image.
+The Hestia mark lives at `web/public/hestia-logo.png` — a square PNG with a
+transparent background. If it is ever missing the app falls back to a plain
+drawn ring rather than a broken image. In dark mode the sidebar gives it a
+light panel instead of inverting it, since inverted line art is a different
+logo.
 
 Open http://localhost:3000, create your account, then run `seed_admin.sql`.
 
@@ -167,7 +169,7 @@ Expect **minutes, not seconds** — GitHub has to pick up the job, install Ollam
 restore the weights and screen each article. The page shows the run's progress
 and links to its log.
 
-To enable it, set `GITHUB_DISPATCH_TOKEN` in `web/.env.local` (and in Vercel) to
+To enable it, set `GITHUB_DISPATCH_TOKEN` in `web/.env.local` (and in Render) to
 a fine-grained token scoped to this repository with one permission:
 **Actions: Read and write**.
 

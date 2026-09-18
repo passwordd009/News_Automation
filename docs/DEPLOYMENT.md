@@ -69,20 +69,24 @@ Consequences worth knowing:
 ## The proposed shape
 
 ```
-        Vercel                 GitHub Actions              Supabase
+        Render                 GitHub Actions              Supabase
    ┌──────────────┐          ┌────────────────┐         ┌──────────┐
    │  Next.js     │          │ daily  06:00   │         │ Postgres │
    │  dashboard   │          │ rotate Mon 12  │────────▶│ Auth     │
    │              │          │ on demand      │         │ RLS      │
    │  publishable │─────────▶│                │         └──────────┘
    │  key + RLS   │ dispatch │ secret key     │              ▲
-   └──────────────┘          │ LLM API key    │              │
+   └──────────────┘          │ Ollama on the  │              │
+          │                  │ runner         │              │
           │                  └────────────────┘              │
           └──────────────────── reads/writes ────────────────┘
 ```
 
-**Dashboard → Vercel.** It is a Next.js app that talks to Supabase with the
-publishable key; RLS decides what each person can see. Nothing else needed.
+**Dashboard → Render.** It is a Next.js app that talks to Supabase with the
+publishable key; RLS decides what each person can see. `render.yaml` at the
+repository root defines the service, so it is version-controlled rather than
+clicked together. Nothing in the application code is host-specific — moving
+from one platform to another changed configuration and documentation only.
 
 **Worker → GitHub Actions.** Free, already in your spec (§9), and the secrets
 live in GitHub rather than on a machine someone has to maintain. Two scheduled
@@ -210,7 +214,7 @@ Confirm with `psql "$SUPABASE_DB_URL" -c "\\d public.articles"` — you want
 | `SUPABASE_SECRET_KEY` | the secret (service-role) key |
 
 Both are required; everything else is optional. The secret key bypasses RLS —
-it belongs here and in `worker/.env`, never in Vercel.
+it belongs here and in `worker/.env`, never in Render.
 
 **Variables** (optional): `OLLAMA_MODEL` defaults to `llama3.2:3b`, `TIMEZONE`
 to `America/New_York`.
@@ -239,17 +243,10 @@ it to this repository only, with exactly one permission:
 
 Nothing else — see the warning below.
 
-### 6. Vercel
+### 6. Render
 
-Import the repository, then:
-
-| Setting | Value |
-|---|---|
-| Root directory | `web` |
-| Node version | 22 (supabase-js requires it) |
-| Framework | Next.js (detected) |
-
-Environment variables:
+**New → Blueprint**, pointed at this repository. `render.yaml` supplies
+everything except the secrets, which Render prompts for:
 
 | Variable | |
 |---|---|
@@ -257,16 +254,45 @@ Environment variables:
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | the publishable (anon) key |
 | `GITHUB_DISPATCH_TOKEN` | the token from step 5 |
 
-The first two are public by design and ship in the browser bundle; RLS is what
-protects the data behind them. The third must **not** have a `NEXT_PUBLIC_`
-prefix or it ships too.
+The first two are public by design — they ship in the browser bundle, and RLS
+is what protects the data behind them. The third must **not** gain a
+`NEXT_PUBLIC_` prefix or it ships too.
 
-`SUPABASE_SECRET_KEY` does not go here. Nothing in `web/` reads it.
+`SUPABASE_SECRET_KEY` does **not** go here. It bypasses RLS entirely and
+nothing under `web/` reads it.
+
+To create the service by hand instead of from the blueprint, the settings are:
+
+| Setting | Value |
+|---|---|
+| Runtime | Node |
+| Root directory | `web` |
+| Build command | `npm ci && npm run build` |
+| Start command | `npm start` |
+| Health check path | `/login` |
+| `NODE_VERSION` | `22` |
+
+Two details that are easy to get wrong:
+
+- **No `-p $PORT` on the start command.** `next start` reads `PORT` from the
+  environment and binds `0.0.0.0` already, which is exactly what Render
+  expects.
+- **Health check `/login`, not `/`.** `/` redirects to `/dashboard`, which an
+  unauthenticated check follows to `/login` anyway — so check `/login` and get
+  a 200 rather than a 307 chain.
+
+> **Changing a `NEXT_PUBLIC_` value needs a deploy, not a restart.** Those two
+> variables are inlined into the JavaScript bundle at build time, so a restart
+> serves the old build with the old values baked in. Use **Manual Deploy →
+> Clear build cache & deploy**. `GITHUB_DISPATCH_TOKEN` is read at runtime on
+> the server, so a restart is enough for that one. The asymmetry has cost
+> people an afternoon.
 
 ### 7. Supabase auth settings
 
-**Authentication → URL Configuration:** set the Site URL to your Vercel domain
-and add it to the redirect allow-list, or email links point at localhost.
+**Authentication → URL Configuration:** set the Site URL to your Render domain
+(`https://<service>.onrender.com`, or your custom domain) and add it to the
+redirect allow-list, or email links point at localhost.
 
 **Authentication → Providers → Email:** decide on email confirmation, and decide
 whether signup stays open. Anyone who signs up becomes a Content Creator and can
@@ -276,7 +302,7 @@ read approved and declined articles.
 
 - **Rotate the Supabase keys.** They have passed through local files and
   terminal output during setup. Rotating means updating them in three places:
-  Actions secrets, Vercel, and `worker/.env`.
+  Actions secrets, Render, and `worker/.env`.
 - **Confirm RLS in production.** The local suite proves the policies against a
   throwaway cluster; verify against the real project by signing in as a Content
   Creator and checking the pending queue is empty for them.
