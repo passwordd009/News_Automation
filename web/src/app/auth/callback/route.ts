@@ -1,4 +1,4 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { safeNext } from "@/lib/auth/redirect";
@@ -24,9 +24,17 @@ export const dynamic = "force-dynamic";
  *
  * Handling both means the template can change without a deploy, and a link
  * already sitting in someone's inbox keeps working either way.
+ *
+ * Every redirect here is *relative*. Behind a reverse proxy — Render, and any
+ * other host worth using — `request.nextUrl.origin` in a route handler is the
+ * address the server is bound to internally, not the one in the browser's
+ * address bar. Using it sent people to `https://localhost:10000/reset-password`,
+ * which exists nowhere. A relative Location is resolved by the browser against
+ * the host it actually asked, so it cannot be got wrong and no forwarded
+ * header has to be trusted.
  */
 export async function GET(request: NextRequest) {
-  const { searchParams, origin } = request.nextUrl;
+  const { searchParams } = request.nextUrl;
 
   // Never trusted: this arrives from a link someone else may have composed.
   const next = safeNext(searchParams.get("next"));
@@ -35,9 +43,7 @@ export async function GET(request: NextRequest) {
   // exchange, so check before spending a round trip on it.
   const error = searchParams.get("error");
   if (error) {
-    return NextResponse.redirect(
-      failed(origin, searchParams.get("error_description") ?? error),
-    );
+    return failed(searchParams.get("error_description") ?? error);
   }
 
   const supabase = await createClient();
@@ -49,20 +55,18 @@ export async function GET(request: NextRequest) {
       type,
       token_hash: tokenHash,
     });
-    if (otpError) return NextResponse.redirect(failed(origin, otpError.message));
-    return NextResponse.redirect(new URL(next, origin));
+    if (otpError) return failed(otpError.message);
+    return redirect(next);
   }
 
   const code = searchParams.get("code");
   if (code) {
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
-    if (exchangeError) {
-      return NextResponse.redirect(failed(origin, exchangeError.message));
-    }
-    return NextResponse.redirect(new URL(next, origin));
+    if (exchangeError) return failed(exchangeError.message);
+    return redirect(next);
   }
 
-  return NextResponse.redirect(failed(origin, "That link is incomplete."));
+  return failed("That link is incomplete.");
 }
 
 /**
@@ -88,14 +92,25 @@ function explain(reason: string): string {
 }
 
 /**
+ * A redirect the browser resolves against its own address.
+ *
+ * `NextResponse.redirect()` cannot express this — it parses its argument as an
+ * absolute URL — so the header is set directly. Safe because every caller
+ * passes a same-site path: `next` has been through safeNext(), and the rest
+ * are literals.
+ */
+function redirect(path: string): Response {
+  return new Response(null, { status: 303, headers: { Location: path } });
+}
+
+/**
  * Send a failure somewhere that can explain it.
  *
  * `/reset-password` handles a missing session by offering another link, which
  * is what someone with a stale email actually needs — better than `/login`,
  * where a dead recovery link looks like a wrong password.
  */
-function failed(origin: string, reason: string): URL {
-  const url = new URL("/reset-password", origin);
-  url.searchParams.set("error", explain(reason));
-  return url;
+function failed(reason: string): Response {
+  const query = new URLSearchParams({ error: explain(reason) });
+  return redirect(`/reset-password?${query}`);
 }
