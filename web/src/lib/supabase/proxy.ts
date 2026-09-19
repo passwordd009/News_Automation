@@ -46,7 +46,34 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
+  const { pathname, searchParams } = request.nextUrl;
+
+  // An auth link that arrived at the wrong address.
+  //
+  // Supabase discards a `redirectTo` that is not on the project's allow-list
+  // and falls back to the Site URL — typically the site root, with none of the
+  // path or query the app asked for. The one-time code still arrives, so it is
+  // forwarded to the callback rather than being thrown away by the sign-in
+  // redirect below, which would look like a recovery flow that plainly does
+  // not work.
+  //
+  // Fixing the allow-list remains the right answer. This keeps a
+  // misconfiguration from silently eating the link.
+  if (!pathname.startsWith("/auth/")) {
+    const code = searchParams.get("code");
+    const tokenHash = searchParams.get("token_hash");
+
+    if (code || tokenHash) {
+      const callback = request.nextUrl.clone();
+      callback.pathname = "/auth/callback";
+      callback.search = "";
+      if (code) callback.searchParams.set("code", code);
+      if (tokenHash) callback.searchParams.set("token_hash", tokenHash);
+      callback.searchParams.set("type", searchParams.get("type") ?? "recovery");
+      callback.searchParams.set("next", "/reset-password");
+      return NextResponse.redirect(callback);
+    }
+  }
 
   // Recovery has to work for someone who cannot sign in — that is the whole
   // point of it — so both pages are reachable signed out. /reset-password is

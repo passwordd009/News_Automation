@@ -66,12 +66,34 @@ export function ResetPasswordForm() {
   if (!hasSession) {
     return (
       <div className="rounded-lg border border-border bg-surface p-6 shadow-sm">
-        <p className="text-sm font-medium text-negative">That link no longer works.</p>
+        <p className="text-sm font-medium text-negative">That link did not sign you in.</p>
         <p className="mt-2 text-sm leading-relaxed text-muted">
           {error
             ? error
-            : "Recovery links expire after an hour and can only be used once. Opening one in a different browser from the one that asked for it will not work either."}
+            : "Recovery links expire after an hour and work once. Opening one in a different browser from the one that asked for it will not work either."}
         </p>
+
+        {/*
+          The configuration failure is worth naming. If the link opened at the
+          wrong address — localhost, or the site root instead of this page —
+          the cause is on the Supabase project, not the link, and no number of
+          fresh emails will fix it.
+        */}
+        <details className="mt-4">
+          <summary className="cursor-pointer text-xs text-muted underline underline-offset-4 hover:text-accent">
+            Did the link open at the wrong address?
+          </summary>
+          <p className="mt-2 text-xs leading-relaxed text-muted">
+            If it went to <code>localhost</code>, or to the site&apos;s front page
+            rather than here, Supabase rejected the address the app asked it to
+            return to and used the project&apos;s Site URL instead. In the Supabase
+            dashboard, under <span className="text-foreground">Authentication →
+            URL Configuration</span>, set the Site URL to this site and add{" "}
+            <code>{typeof window === "undefined" ? "" : window.location.origin}/auth/callback</code>{" "}
+            to the redirect allow-list. Then request a new link.
+          </p>
+        </details>
+
         <Link
           href="/forgot-password"
           className="mt-5 block w-full rounded-md bg-accent px-4 py-2 text-center text-sm font-medium text-white transition hover:bg-accent-strong"
