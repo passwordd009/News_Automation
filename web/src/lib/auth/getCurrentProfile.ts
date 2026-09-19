@@ -11,17 +11,27 @@ export interface CurrentUser {
 }
 
 /**
- * Three distinct states, not two.
+ * Four distinct states, not two.
  *
  * "Signed in but has no profile" is not the same as "signed out", and
  * collapsing them causes a redirect loop: the layout sends the user to /login
  * because they have no role, the proxy sees a valid session and sends them
  * back to /dashboard, forever. Keeping the states separate lets the app say
  * what is actually wrong.
+ *
+ * "Waiting for approval" is the fourth, and is a real session with a real
+ * profile — the account simply has not been let in yet. It carries the
+ * request's age so the screen can say how long is left.
  */
 export type AuthState =
   | { status: "anonymous" }
   | { status: "no-profile"; userId: string; email: string | null }
+  | {
+      status: "not-approved";
+      email: string | null;
+      requestedAt: string;
+      declined: boolean;
+    }
   | { status: "ok"; user: CurrentUser };
 
 export async function getAuthState(): Promise<AuthState> {
@@ -35,9 +45,11 @@ export async function getAuthState(): Promise<AuthState> {
 
   const { data, error } = await supabase
     .from("profiles")
-    .select("id, email, full_name, role")
+    .select("id, email, full_name, role, access_status, requested_at")
     .eq("id", user.id)
-    .maybeSingle<Pick<Profile, "id" | "email" | "full_name" | "role">>();
+    .maybeSingle<
+      Pick<Profile, "id" | "email" | "full_name" | "role" | "access_status" | "requested_at">
+    >();
 
   if (error) {
     console.error("Could not read the profile for", user.id, error.message);
@@ -54,6 +66,17 @@ export async function getAuthState(): Promise<AuthState> {
   if (!isValidRole(data.role)) {
     console.error("Profile has an unrecognised role:", data.role);
     return { status: "no-profile", userId: user.id, email: user.email ?? null };
+  }
+
+  // An account nobody has accepted has a role on paper and none in practice —
+  // RLS returns it nothing. Say so here rather than rendering empty pages.
+  if (data.access_status !== "approved") {
+    return {
+      status: "not-approved",
+      email: data.email ?? user.email ?? null,
+      requestedAt: data.requested_at,
+      declined: data.access_status === "declined",
+    };
   }
 
   return {

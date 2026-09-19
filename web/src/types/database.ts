@@ -16,11 +16,18 @@ export type ArticleStatus =
 
 export type PeriodStatus = "active" | "closed";
 
+export type AccessStatus = "pending" | "approved" | "declined";
+
 export interface Profile {
   id: string;
   email: string | null;
   full_name: string | null;
   role: Role;
+  /** Whether an admin has let this account in. New signups start pending. */
+  access_status: AccessStatus;
+  requested_at: string;
+  access_decided_by: string | null;
+  access_decided_at: string | null;
   created_at: string;
   updated_at: string;
 }
