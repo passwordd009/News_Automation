@@ -157,6 +157,16 @@ Signing up asks for a first and last name, which the signup trigger stores as
 `profiles.full_name`. An existing account can set one later from **your
 account** — the email address in the sidebar footer links there.
 
+**A new signup cannot read anything until an admin accepts it.** It appears
+under *Waiting for approval* on the Users page with 72 hours on the clock;
+until then the account sees only a screen saying so. A request that nobody
+answers stops counting as waiting, but the row is kept and an admin can still
+accept it late — expiry means nobody got to it, not that the answer was no.
+
+The gate is one function: every articles policy is keyed on
+`current_role_name()`, which returns NULL for an unapproved profile, so the
+role a signup holds on paper means nothing until the account is let in.
+
 **Forgot your password?** on the sign-in form emails a recovery link. It needs
 the Supabase redirect allow-list to include `<origin>/auth/callback`, and
 Supabase's built-in sender only reaches project team members at 2 messages an

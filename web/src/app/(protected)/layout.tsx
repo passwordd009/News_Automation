@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/navigation/AppSidebar";
 import { getAuthState } from "@/lib/auth/getCurrentProfile";
 import { can, capabilityForPath } from "@/lib/auth/permissions";
 import { AccountSetupNotice } from "@/components/navigation/AccountSetupNotice";
+import { PendingApprovalNotice } from "@/components/navigation/PendingApprovalNotice";
 
 /**
  * Server-side guard for every protected route.
@@ -25,6 +26,19 @@ export default async function ProtectedLayout({
   // proxy sees a valid session and sends them straight back. Explain instead.
   if (state.status === "no-profile") {
     return <AccountSetupNotice email={state.email} userId={state.userId} />;
+  }
+
+  // Signed in, with a profile, and not yet let in. The app is replaced rather
+  // than guarded page by page: RLS gives this account nothing, so every route
+  // would render an empty version of itself.
+  if (state.status === "not-approved") {
+    return (
+      <PendingApprovalNotice
+        email={state.email}
+        requestedAt={state.requestedAt}
+        declined={state.declined}
+      />
+    );
   }
 
   const profile = state.user;

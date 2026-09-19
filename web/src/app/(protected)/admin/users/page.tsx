@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { requireProfile } from "@/lib/auth/getCurrentProfile";
 import { can } from "@/lib/auth/permissions";
-import { getUsers } from "@/lib/auth/userQueries";
+import { getSignupRequests, getUsers } from "@/lib/auth/userQueries";
 import { RoleSelect } from "@/components/admin/RoleSelect";
+import { SignupRequests } from "@/components/admin/SignupRequests";
 
 export const metadata = { title: "Users · Project Hestia" };
 
@@ -17,7 +18,10 @@ export default async function UsersPage() {
   const profile = await requireProfile();
   if (!can(profile.role, "manageUserRoles")) redirect("/dashboard?denied=1");
 
-  const { users, error } = await getUsers();
+  const [{ users, error }, requests] = await Promise.all([
+    getUsers(),
+    getSignupRequests(),
+  ]);
 
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
@@ -29,8 +33,8 @@ export default async function UsersPage() {
           {users.length} {users.length === 1 ? "account" : "accounts"}
         </p>
         <p className="mt-1 text-sm text-muted">
-          Anyone who signs up starts as a Content Creator. Approvers and admins are
-          promoted here.
+          A new signup can read nothing until an admin accepts it. Accepted
+          accounts start as Content Creators and are promoted here.
         </p>
       </header>
 
@@ -44,7 +48,19 @@ export default async function UsersPage() {
         </div>
       )}
 
-      <div className="mt-8 overflow-x-auto rounded-lg border border-border">
+      <SignupRequests waiting={requests.waiting} expired={requests.expired} />
+
+      {requests.error && (
+        <p role="alert" className="mt-4 text-sm text-negative">
+          {requests.error}
+        </p>
+      )}
+
+      <h2 className="mt-10 text-xs font-semibold uppercase tracking-widest text-muted">
+        Accounts
+      </h2>
+
+      <div className="mt-4 overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-border bg-surface">
             <tr>

@@ -328,8 +328,9 @@ Templates → Reset Password** to use `{{ .TokenHash }}` instead of
 links already sent keep working.
 
 **Email confirmation and open signup.** Decide whether new accounts must
-confirm their address, and whether signup stays open at all — anyone who signs
-up becomes a Content Creator and can read approved and declined articles.
+confirm their address. Leaving signup open is now safe by default: a new
+account is held at *Waiting for approval* and can read nothing until an admin
+accepts it on the Users page, with the request lapsing after 72 hours.
 
 ### 8. Harden, before real data
 

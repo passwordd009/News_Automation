@@ -19,6 +19,14 @@ update public.profiles set role = 'admin'    where id = 'a0000000-0000-0000-0000
 update public.profiles set role = 'approver' where id = 'a0000000-0000-0000-0000-000000000002';
 -- creator keeps the content_creator default
 
+-- These three stand for accounts that are already in. A profile now starts
+-- 'pending', so without this every fixture would be an unapproved account and
+-- the role tests would all pass for the wrong reason.
+update public.profiles set access_status = 'approved'
+ where id in ('a0000000-0000-0000-0000-000000000001',
+              'a0000000-0000-0000-0000-000000000002',
+              'a0000000-0000-0000-0000-000000000003');
+
 insert into public.weekly_periods (id, start_date, end_date)
 values ('b0000000-0000-0000-0000-000000000001', date '2026-09-07', date '2026-09-13');
 
@@ -523,6 +531,120 @@ begin
       where id = 'a0000000-0000-0000-0000-000000000003') = 'Renamed',
     'a content creator can still edit their own name'
   );
+end;
+$$;
+rollback;
+
+-- ---------------------------------------------------------------------------
+-- Account approval
+-- ---------------------------------------------------------------------------
+
+\echo ''
+\echo '=== Account approval ==='
+
+-- A fresh signup, not yet accepted by anyone.
+insert into auth.users (id, email, raw_user_meta_data)
+values ('a000000a-0000-0000-0000-00000000000a', 'waiting@hestia.test',
+        '{"full_name": "Waiting Person"}'::jsonb)
+on conflict (id) do nothing;
+
+do $$
+begin
+  perform public.assert(
+    (select access_status from public.profiles
+      where id = 'a000000a-0000-0000-0000-00000000000a') = 'pending',
+    'a new signup starts pending'
+  );
+
+  perform public.assert(
+    (select count(*) from public.profiles where access_status = 'approved') >= 3,
+    'the migration left existing accounts approved'
+  );
+end;
+$$;
+
+begin;
+set local role authenticated;
+select public.act_as('a000000a-0000-0000-0000-00000000000a');
+do $$
+declare n int;
+begin
+  -- The whole point: an account nobody accepted reads nothing, whatever its
+  -- role column says. Every articles policy keys off current_role_name(),
+  -- which returns NULL until the account is approved.
+  perform public.assert(
+    public.current_role_name() is null,
+    'an unapproved account has no effective role'
+  );
+
+  select count(*) into n from public.articles;
+  perform public.assert(n = 0, 'an unapproved account sees no articles');
+
+  select count(*) into n from public.profiles;
+  perform public.assert(n = 1, 'an unapproved account sees only its own profile');
+
+  -- ...and cannot let itself in.
+  begin
+    update public.profiles set access_status = 'approved'
+     where id = 'a000000a-0000-0000-0000-00000000000a';
+    perform public.assert(
+      (select access_status from public.profiles
+        where id = 'a000000a-0000-0000-0000-00000000000a') <> 'approved',
+      'an unapproved account cannot approve itself'
+    );
+  exception when insufficient_privilege then
+    perform public.assert(true, 'an unapproved account cannot approve itself');
+  end;
+end;
+$$;
+rollback;
+
+-- An approver is not an admin: accepting accounts is not an editorial power.
+begin;
+set local role authenticated;
+select public.act_as('a0000000-0000-0000-0000-000000000002');
+do $$
+begin
+  update public.profiles set access_status = 'approved'
+   where id = 'a000000a-0000-0000-0000-00000000000a';
+  perform public.assert(
+    (select access_status from public.profiles
+      where id = 'a000000a-0000-0000-0000-00000000000a') = 'pending',
+    'an approver cannot accept an account'
+  );
+end;
+$$;
+rollback;
+
+begin;
+set local role authenticated;
+select public.act_as('a0000000-0000-0000-0000-000000000001');
+do $$
+declare n int;
+begin
+  update public.profiles
+     set access_status = 'approved',
+         access_decided_by = 'a0000000-0000-0000-0000-000000000001'
+   where id = 'a000000a-0000-0000-0000-00000000000a';
+
+  perform public.assert(
+    (select access_status from public.profiles
+      where id = 'a000000a-0000-0000-0000-00000000000a') = 'approved',
+    'an admin can accept an account'
+  );
+
+  -- And now the role it always had starts meaning something.
+  perform public.act_as('a000000a-0000-0000-0000-00000000000a');
+  perform public.assert(
+    public.current_role_name() = 'content_creator',
+    'accepting the account restores its role'
+  );
+
+  select count(*) into n from public.articles;
+  perform public.assert(n > 0, 'an accepted content creator can read decided articles');
+
+  select count(*) into n from public.articles where status = 'pending';
+  perform public.assert(n = 0, 'an accepted content creator still cannot see the queue');
 end;
 $$;
 rollback;
