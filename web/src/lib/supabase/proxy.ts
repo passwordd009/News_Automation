@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { getSupabaseEnv } from "@/lib/supabase/env";
+import { describeAuthError } from "@/lib/auth/authErrors";
 
 /**
  * Refreshes the auth session on every request and bounces signed-out users.
@@ -59,9 +60,27 @@ export async function updateSession(request: NextRequest) {
   //
   // Fixing the allow-list remains the right answer. This keeps a
   // misconfiguration from silently eating the link.
-  if (!pathname.startsWith("/auth/")) {
+  if (!pathname.startsWith("/auth/") && pathname !== "/reset-password") {
     const code = searchParams.get("code");
     const tokenHash = searchParams.get("token_hash");
+
+    // Supabase reports a refused link the same way: on the fallback address,
+    // as query parameters. Without this the explanation rides along into the
+    // sign-in redirect and is never shown, leaving a bare login page as the
+    // only answer to "why did my reset link not work". `error_code` is what
+    // distinguishes this from any other `?error=` the app might use.
+    const errorCode = searchParams.get("error_code");
+    const errorDescription = searchParams.get("error_description");
+    if (errorCode || (searchParams.get("error") && errorDescription)) {
+      const failed = request.nextUrl.clone();
+      failed.pathname = "/reset-password";
+      failed.search = "";
+      failed.searchParams.set(
+        "error",
+        describeAuthError(errorCode, errorDescription),
+      );
+      return NextResponse.redirect(failed);
+    }
 
     if (code || tokenHash) {
       const callback = request.nextUrl.clone();

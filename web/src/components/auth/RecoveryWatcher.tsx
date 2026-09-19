@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { describeAuthError } from "@/lib/auth/authErrors";
 
 const RESET_PATH = "/reset-password";
 
@@ -38,9 +39,20 @@ export function RecoveryWatcher() {
     // client is constructed it never fires at all. Reading the fragment covers
     // both — and it is carried across rather than dropped, because the tokens
     // may not have been consumed yet.
+    // Supabase puts a refused link's explanation in the fragment as well as
+    // the query, and the fragment is the copy that survives every redirect.
     const hash = window.location.hash;
     if (/[#&]type=recovery(&|$)/.test(hash)) {
       router.replace(`${RESET_PATH}${hash}`);
+    } else if (/[#&]error(_code)?=/.test(hash)) {
+      const reported = new URLSearchParams(hash.slice(1));
+      const query = new URLSearchParams({
+        error: describeAuthError(
+          reported.get("error_code"),
+          reported.get("error_description"),
+        ),
+      });
+      router.replace(`${RESET_PATH}?${query}`);
     }
 
     return () => data.subscription.unsubscribe();
