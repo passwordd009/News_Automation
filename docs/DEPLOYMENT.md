@@ -294,9 +294,16 @@ Two details that are easy to get wrong:
 (`https://<service>.onrender.com`, or your custom domain), and add
 `https://<your-domain>/auth/callback` to the redirect allow-list.
 
-Both are required for password recovery. Supabase refuses a `redirectTo` that
-is not on the list, so the reset email either fails to send or arrives pointing
-at localhost.
+Both are required for password recovery. Supabase silently discards a
+`redirectTo` that is not on the list and substitutes the Site URL — which is
+why a reset email arrives pointing at localhost, or at the site's front page
+instead of the reset form.
+
+The app carries a safety net for this: a one-time code arriving on any path is
+forwarded to `/auth/callback`, and a recovery session that arrives as a URL
+fragment is picked up wherever it lands. That turns the misconfiguration from
+a dead link into a working one — but only while the Site URL still points
+somewhere real. Set the allow-list anyway.
 
 **Authentication → Emails → SMTP Settings: configure a custom provider before
 anyone but you relies on this.** Supabase's built-in sender is capped at **2
